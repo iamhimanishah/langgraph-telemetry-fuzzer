@@ -1,3 +1,9 @@
+from langgraph_telemetry_fuzzer.grader import (
+    Grade,
+    Outcome,
+    grade,
+    is_signal_sufficient,
+)
 from langgraph_telemetry_fuzzer.injectors.compose import apply_corruptions
 from langgraph_telemetry_fuzzer.models import (
     AgentVerdict,
@@ -7,6 +13,7 @@ from langgraph_telemetry_fuzzer.models import (
     Scenario,
     Severity,
     Telemetry,
+    ToleranceSpec,
 )
 
 __version__ = "0.1.0"
@@ -14,10 +21,15 @@ __version__ = "0.1.0"
 __all__ = [
     "AgentVerdict",
     "CorruptionSpec",
+    "Grade",
     "LogEntry",
     "MetricPoint",
+    "Outcome",
     "Scenario",
     "Severity",
     "Telemetry",
+    "ToleranceSpec",
     "apply_corruptions",
+    "grade",
+    "is_signal_sufficient",
 ]

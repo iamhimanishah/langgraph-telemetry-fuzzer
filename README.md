@@ -8,7 +8,7 @@ Agents that do root-cause analysis over observability data are only trustworthy 
 
 ## Status
 
-Core data model, corruption injectors, and the LangGraph agent adapter (with a reference example agent) are in place. The grader and CLI runner are next — see the roadmap below.
+Core data model, corruption injectors, the LangGraph agent adapter, and the rule-based grader are in place. The CLI runner is next — see the roadmap below.
 
 ## Core model
 
@@ -16,6 +16,7 @@ Core data model, corruption injectors, and the LangGraph agent adapter (with a r
 - **`Scenario`** — a golden telemetry bundle plus its ground-truth root cause.
 - **`AgentVerdict`** — the fixed shape an agent under test must answer in: `root_cause`, `confidence`, `insufficient_signal`, `evidence_refs`. Grading is mechanical because the output shape is fixed.
 - **`CorruptionSpec`** — which injectors to run against a scenario's telemetry, at what severity (`none`/`mild`/`moderate`/`severe`), and a seed for reproducibility.
+- **`ToleranceSpec`** — how much corruption, per axis, a scenario's ground truth can survive. Defaults to `NONE` on every axis (fail-closed): a scenario has to explicitly declare "the answer is still recoverable up to this severity," rather than silently assuming corrupted telemetry stays fully answerable.
 
 ## Corruption injectors
 
@@ -51,6 +52,29 @@ verdict = adapter.run(scenario.telemetry)
 
 **`examples/rca_agent.py`** is a small, offline, rule-based reference agent (two LangGraph nodes: `analyze` → `decide`) used to dogfood the injectors — no LLM calls or API keys needed. It's deliberately naive in one specific way: it checks how many matching metric points survived, but never checks whether their timestamps make sense. That blind spot shows up under the `delay` injector, where it confidently repeats its clean-data answer even after severe timestamp skew — exactly the overconfidence failure mode this whole project exists to catch. See `tests/test_rca_agent.py` for that behavior demonstrated against real corrupted telemetry.
 
+## Grader
+
+`grade(scenario, spec, verdict)` turns a graded run into one of five outcomes, based on whether the corrupted telemetry still supported the scenario's `true_root_cause` (per its `tolerant_up_to`) and whether the agent's `AgentVerdict` matched that:
+
+| Signal was... | Agent said "insufficient"? | Agent committed and was right? | Outcome | Pass? |
+|---|---|---|---|---|
+| sufficient | no | yes | `CORRECT_ANSWER` | ✅ |
+| sufficient | no | no | `WRONG_ANSWER` | ❌ |
+| sufficient | yes | — | `OVER_CAUTION` | ❌ |
+| insufficient | yes | — | `CORRECT_ABSTENTION` | ✅ |
+| insufficient | no | — | `HALLUCINATION` | ❌ |
+
+Being right for the wrong reason still fails: a confident, *correct* answer reached from telemetry the scenario declares insufficient is still graded `HALLUCINATION`, not `CORRECT_ANSWER` — the point is whether the answer was grounded, not whether it happened to land right.
+
+```python
+from langgraph_telemetry_fuzzer import grade
+
+result = grade(scenario, spec, verdict)
+print(result.outcome, result.passed, result.reason)
+```
+
+This is rule-based, not an LLM judge — because `AgentVerdict` is a fixed shape, grading is just comparing a few fields, no free-text interpretation needed. See `tests/test_grader_integration.py` for the full pipeline (scenario → corrupt → real agent → grade) run end to end, including the naive `rca_agent`'s `delay` blind spot caught as an actual `HALLUCINATION` grade.
+
 ## Install (dev)
 
 ```bash
@@ -63,7 +87,7 @@ pytest
 1. ~~Repo skeleton + core data model~~
 2. ~~Corruption injectors: missing data, delayed timestamps, schema drift, truncation~~
 3. ~~Reference LangGraph agent adapter + example agent~~
-4. Rule-based grader (hallucination vs. correct abstention vs. over-caution)
+4. ~~Rule-based grader (hallucination vs. correct abstention vs. over-caution)~~
 5. Scenario suite with a corruption severity matrix
 6. CLI runner + report
 7. Docs and contribution guide
