@@ -56,11 +56,29 @@ class Telemetry(BaseModel):
         return self.model_copy(deep=True)
 
 
+class ToleranceSpec(BaseModel):
+    """How much corruption, per axis, a scenario's ground truth can survive.
+
+    Defaults to NONE on every axis -- fail-closed. A scenario author has to
+    explicitly declare "the answer is still recoverable up to this severity"
+    for the grader to expect a committed answer under any corruption at all.
+    Silently assuming corrupted telemetry is still fully answerable would
+    undermine the whole point of this harness.
+    """
+
+    missing: Severity = Severity.NONE
+    delay: Severity = Severity.NONE
+    drift: Severity = Severity.NONE
+    truncate: Severity = Severity.NONE
+
+
 class Scenario(BaseModel):
     """A golden test case: clean telemetry plus the ground-truth answer.
 
     Injectors are applied to `telemetry` at run time; `true_root_cause` and
     `id` stay fixed so the grader always knows what "correct" means.
+    `tolerant_up_to` tells the grader how much corruption still leaves
+    enough signal to expect a committed (not abstained) answer.
     """
 
     id: str
@@ -68,6 +86,7 @@ class Scenario(BaseModel):
     telemetry: Telemetry
     true_root_cause: str
     system: str | None = None
+    tolerant_up_to: ToleranceSpec = Field(default_factory=ToleranceSpec)
 
 
 class CorruptionSpec(BaseModel):
