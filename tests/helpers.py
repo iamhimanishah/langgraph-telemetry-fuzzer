@@ -27,3 +27,20 @@ def build_telemetry(n_metrics: int = 20, n_logs: int = 10) -> Telemetry:
             for i in range(n_logs)
         ],
     )
+
+
+def build_spiking_telemetry(n_points: int = 20) -> Telemetry:
+    """A synthetic incident window where `error_rate` clearly spikes partway
+    through: low and flat for the first half, then a sustained jump above
+    the rca_agent example's SPIKE_THRESHOLD (0.5) for the second half.
+    """
+    return Telemetry(
+        metrics=[
+            MetricPoint(
+                timestamp=BASE_TIME + timedelta(seconds=i),
+                name="error_rate",
+                value=0.02 if i < n_points // 2 else 0.9,
+            )
+            for i in range(n_points)
+        ]
+    )
