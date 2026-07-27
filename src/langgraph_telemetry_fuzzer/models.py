@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -29,14 +29,14 @@ class MetricPoint(BaseModel):
     timestamp: datetime
     name: str
     value: float
-    unit: Optional[str] = None
+    unit: str | None = None
 
 
 class LogEntry(BaseModel):
     timestamp: datetime
     level: str
     message: str
-    source: Optional[str] = None
+    source: str | None = None
 
 
 class Telemetry(BaseModel):
@@ -47,9 +47,9 @@ class Telemetry(BaseModel):
     """
 
     schema_version: str = "1.0"
-    metrics: List[MetricPoint] = Field(default_factory=list)
-    logs: List[LogEntry] = Field(default_factory=list)
-    traces: List[Dict[str, Any]] = Field(default_factory=list)
+    metrics: list[MetricPoint] = Field(default_factory=list)
+    logs: list[LogEntry] = Field(default_factory=list)
+    traces: list[dict[str, Any]] = Field(default_factory=list)
 
     def clone(self) -> Telemetry:
         """Deep copy so injectors never mutate the scenario's golden fixture."""
@@ -67,7 +67,7 @@ class Scenario(BaseModel):
     description: str
     telemetry: Telemetry
     true_root_cause: str
-    system: Optional[str] = None
+    system: str | None = None
 
 
 class AgentVerdict(BaseModel):
@@ -78,8 +78,8 @@ class AgentVerdict(BaseModel):
     check pass/fail without interpreting free text.
     """
 
-    root_cause: Optional[str] = None
+    root_cause: str | None = None
     confidence: float = Field(ge=0.0, le=1.0, default=0.0)
     insufficient_signal: bool = False
-    evidence_refs: List[str] = Field(default_factory=list)
-    raw_output: Optional[Any] = None
+    evidence_refs: list[str] = Field(default_factory=list)
+    raw_output: Any | None = None
