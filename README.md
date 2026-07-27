@@ -8,7 +8,7 @@ Agents that do root-cause analysis over observability data are only trustworthy 
 
 ## Status
 
-Core data model and corruption injectors are in place. The agent adapter, grader, and CLI runner are next — see the roadmap below.
+Core data model, corruption injectors, and the LangGraph agent adapter (with a reference example agent) are in place. The grader and CLI runner are next — see the roadmap below.
 
 ## Core model
 
@@ -35,10 +35,26 @@ corrupted = apply_corruptions(scenario.telemetry, spec)
 
 Same telemetry + same spec always produces identical output — corruption is deterministic, not just random noise.
 
+## Agent adapter
+
+`LangGraphAdapter` wraps any compiled LangGraph graph so the harness can run it uniformly. It doesn't import `langgraph` itself — it only needs an object with an `.invoke(state: dict) -> dict` method, so `langgraph` stays an optional dependency (`pip install -e ".[langgraph]"`) needed only to run the example agent.
+
+Your graph's state must accept telemetry under `telemetry_key` (default `"telemetry"`) and return a verdict — an `AgentVerdict` or a plain dict with its fields — under `verdict_key` (default `"verdict"`):
+
+```python
+from langgraph_telemetry_fuzzer.adapter import LangGraphAdapter
+from examples.rca_agent import build_graph
+
+adapter = LangGraphAdapter(build_graph())
+verdict = adapter.run(scenario.telemetry)
+```
+
+**`examples/rca_agent.py`** is a small, offline, rule-based reference agent (two LangGraph nodes: `analyze` → `decide`) used to dogfood the injectors — no LLM calls or API keys needed. It's deliberately naive in one specific way: it checks how many matching metric points survived, but never checks whether their timestamps make sense. That blind spot shows up under the `delay` injector, where it confidently repeats its clean-data answer even after severe timestamp skew — exactly the overconfidence failure mode this whole project exists to catch. See `tests/test_rca_agent.py` for that behavior demonstrated against real corrupted telemetry.
+
 ## Install (dev)
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,langgraph]"
 pytest
 ```
 
@@ -46,7 +62,7 @@ pytest
 
 1. ~~Repo skeleton + core data model~~
 2. ~~Corruption injectors: missing data, delayed timestamps, schema drift, truncation~~
-3. Reference LangGraph agent adapter + example agent
+3. ~~Reference LangGraph agent adapter + example agent~~
 4. Rule-based grader (hallucination vs. correct abstention vs. over-caution)
 5. Scenario suite with a corruption severity matrix
 6. CLI runner + report
