@@ -70,6 +70,20 @@ class Scenario(BaseModel):
     system: str | None = None
 
 
+class CorruptionSpec(BaseModel):
+    """Which injectors to run against a scenario's telemetry, and how hard.
+
+    `seed` makes a run reproducible: the same spec against the same scenario
+    always produces byte-identical corrupted telemetry.
+    """
+
+    seed: int = 0
+    missing: Severity = Severity.NONE
+    delay: Severity = Severity.NONE
+    drift: Severity = Severity.NONE
+    truncate: Severity = Severity.NONE
+
+
 class AgentVerdict(BaseModel):
     """The required shape of an agent's answer.
 
