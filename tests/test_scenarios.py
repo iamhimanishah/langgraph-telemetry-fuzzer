@@ -1,4 +1,4 @@
-from scenarios import ALL_SCENARIOS
+from langgraph_telemetry_fuzzer.scenarios import ALL_SCENARIOS
 
 
 def test_suite_has_at_least_five_scenarios():

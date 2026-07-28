@@ -1,19 +1,91 @@
 """CLI entry point.
 
-The `ltf run` command (agent x scenario x corruption -> report) lands in
-Milestone 6, once injectors, the adapter, and the grader exist. For now this
-just confirms the package installs and the entry point resolves.
+`ltf run --agent module:function` runs the built-in scenario suite (see
+langgraph_telemetry_fuzzer.scenarios) against a LangGraph agent across the
+standard corruption matrix, prints a markdown summary, and optionally
+writes the full per-run results as JSON.
 """
 
+from __future__ import annotations
+
 import argparse
+import importlib
+import json
 import sys
+from pathlib import Path
+
+from langgraph_telemetry_fuzzer.adapter import LangGraphAdapter
+from langgraph_telemetry_fuzzer.report import render_markdown
+from langgraph_telemetry_fuzzer.runner import run_suite
+from langgraph_telemetry_fuzzer.scenarios import ALL_SCENARIOS, single_axis_matrix
+
+
+def _load_adapter(agent_spec: str) -> LangGraphAdapter:
+    """`agent_spec` is "module.path:function_name" -- the function takes no
+    arguments and returns a compiled LangGraph graph, e.g.
+    "examples.rca_agent:build_graph".
+    """
+    module_name, sep, func_name = agent_spec.partition(":")
+    if not sep:
+        raise ValueError(f"--agent must be 'module:function', got {agent_spec!r}")
+    module = importlib.import_module(module_name)
+    try:
+        build_graph = getattr(module, func_name)
+    except AttributeError as exc:
+        raise ValueError(f"{module_name!r} has no attribute {func_name!r}") from exc
+    return LangGraphAdapter(build_graph())
+
+
+def _run(args: argparse.Namespace) -> int:
+    try:
+        adapter = _load_adapter(args.agent)
+    except (ImportError, ValueError) as exc:
+        print(f"ltf: {exc}", file=sys.stderr)
+        return 2
+
+    specs = single_axis_matrix(seed=args.seed)
+    report = run_suite(ALL_SCENARIOS, specs, adapter)
+
+    print(render_markdown(report))
+
+    if args.json_out:
+        args.json_out.write_text(json.dumps(report.to_json_dict(), indent=2))
+        print(f"\nFull report written to {args.json_out}")
+
+    return 0 if report.pass_rate() == 1.0 else 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="ltf")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = subparsers.add_parser(
+        "run", help="Run the scenario suite against a LangGraph agent"
+    )
+    run_parser.add_argument(
+        "--agent",
+        required=True,
+        help="module:function returning a compiled LangGraph graph, "
+        "e.g. examples.rca_agent:build_graph",
+    )
+    run_parser.add_argument(
+        "--seed", type=int, default=0, help="Corruption seed (default: 0)"
+    )
+    run_parser.add_argument(
+        "--json-out",
+        type=Path,
+        default=None,
+        help="Write the full report as JSON to this path",
+    )
+    run_parser.set_defaults(func=_run)
+
+    return parser
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="ltf")
-    parser.parse_args()
-    print("ltf: not implemented yet (see the roadmap in README.md)")
-    return 0
+    parser = build_parser()
+    args = parser.parse_args()
+    return args.func(args)
 
 
 if __name__ == "__main__":
