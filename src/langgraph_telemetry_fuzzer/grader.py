@@ -11,6 +11,7 @@ for free-text agent output is a possible future extension, not needed here.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Protocol
 
 from pydantic import BaseModel
 
@@ -47,13 +48,20 @@ PASSING_OUTCOMES = frozenset({Outcome.CORRECT_ANSWER, Outcome.CORRECT_ABSTENTION
 class MatchMethod(str, Enum):
     """How an agent's root_cause was matched against the scenario's.
 
-    Recorded so a report reader can discount alias-matched passes: an EXACT
-    match is unambiguous, while an ALIAS match is only as trustworthy as the
-    scenario author's alias list.
+    Recorded so a report reader can discount weaker matches: EXACT is
+    unambiguous, ALIAS is only as trustworthy as the scenario author's alias
+    list, and JUDGE is only as trustworthy as the judge model.
     """
 
     EXACT = "exact"  # matched true_root_cause itself
     ALIAS = "alias"  # matched one of the scenario's other accepted phrasings
+    JUDGE = "judge"  # an opt-in LLM judge called it equivalent
+
+
+class RootCauseJudge(Protocol):
+    """An opt-in fallback consulted only when exact and alias matching miss."""
+
+    def __call__(self, claimed: str, scenario: Scenario) -> bool: ...
 
 
 class Grade(BaseModel):
@@ -78,9 +86,15 @@ def is_signal_sufficient(scenario: Scenario, spec: CorruptionSpec) -> bool:
 
 
 def _match_root_cause(
-    verdict: AgentVerdict, scenario: Scenario
+    verdict: AgentVerdict,
+    scenario: Scenario,
+    judge: RootCauseJudge | None = None,
 ) -> MatchMethod | None:
-    """Returns how the claimed root cause matched, or None if it didn't."""
+    """Returns how the claimed root cause matched, or None if it didn't.
+
+    Tiered deliberately: the deterministic checks run first and the judge --
+    when one is supplied at all -- only sees claims they both rejected.
+    """
     if verdict.root_cause is None:
         return None
     claimed = verdict.root_cause.strip().lower()
@@ -89,11 +103,39 @@ def _match_root_cause(
     for alias in scenario.accepted_root_causes:
         if claimed == alias.strip().lower():
             return MatchMethod.ALIAS
+    if judge is not None and judge(verdict.root_cause, scenario):
+        return MatchMethod.JUDGE
     return None
 
 
-def grade(scenario: Scenario, spec: CorruptionSpec, verdict: AgentVerdict) -> Grade:
-    """Grades one agent run against one (scenario, corruption spec) pair."""
+def _match_reason(
+    method: MatchMethod, verdict: AgentVerdict, scenario: Scenario
+) -> str:
+    if method is MatchMethod.EXACT:
+        return f"Correctly identified '{scenario.true_root_cause}'."
+    if method is MatchMethod.ALIAS:
+        return (
+            f"Matched an accepted phrasing of '{scenario.true_root_cause}' "
+            f"({verdict.root_cause!r})."
+        )
+    return (
+        f"An LLM judge considered {verdict.root_cause!r} equivalent to "
+        f"'{scenario.true_root_cause}'."
+    )
+
+
+def grade(
+    scenario: Scenario,
+    spec: CorruptionSpec,
+    verdict: AgentVerdict,
+    judge: RootCauseJudge | None = None,
+) -> Grade:
+    """Grades one agent run against one (scenario, corruption spec) pair.
+
+    `judge` is an optional fallback for root-cause matching only -- it never
+    influences the grounding decision (commit vs. abstain), which stays
+    entirely rule-based.
+    """
     if is_signal_sufficient(scenario, spec):
         if verdict.insufficient_signal:
             return Grade(
@@ -104,19 +146,12 @@ def grade(scenario: Scenario, spec: CorruptionSpec, verdict: AgentVerdict) -> Gr
                     "but the agent abstained anyway."
                 ),
             )
-        match_method = _match_root_cause(verdict, scenario)
+        match_method = _match_root_cause(verdict, scenario, judge)
         if match_method is not None:
-            if match_method is MatchMethod.EXACT:
-                reason = f"Correctly identified '{scenario.true_root_cause}'."
-            else:
-                reason = (
-                    f"Matched an accepted phrasing of "
-                    f"'{scenario.true_root_cause}' ({verdict.root_cause!r})."
-                )
             return Grade(
                 outcome=Outcome.CORRECT_ANSWER,
                 passed=True,
-                reason=reason,
+                reason=_match_reason(match_method, verdict, scenario),
                 match_method=match_method,
             )
         return Grade(

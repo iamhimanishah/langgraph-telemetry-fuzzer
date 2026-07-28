@@ -37,6 +37,13 @@ def render_markdown(report: Report) -> str:
             "alias rather than its canonical phrasing."
         )
 
+    judge_matched = report.judge_matched_count()
+    if judge_matched:
+        lines.append(
+            f"- Note: {judge_matched} correct answer(s) passed only because an "
+            "LLM judge called them equivalent — discount accordingly."
+        )
+
     lines += [
         "",
         "## Outcome breakdown",

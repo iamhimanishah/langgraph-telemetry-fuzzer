@@ -7,7 +7,13 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from langgraph_telemetry_fuzzer.adapter import LangGraphAdapter
-from langgraph_telemetry_fuzzer.grader import Grade, MatchMethod, Outcome, grade
+from langgraph_telemetry_fuzzer.grader import (
+    Grade,
+    MatchMethod,
+    Outcome,
+    RootCauseJudge,
+    grade,
+)
 from langgraph_telemetry_fuzzer.injectors.compose import apply_corruptions
 from langgraph_telemetry_fuzzer.models import (
     AgentVerdict,
@@ -100,6 +106,12 @@ class Report(BaseModel):
             1 for r in self.results if r.grade.match_method is MatchMethod.ALIAS
         )
 
+    def judge_matched_count(self) -> int:
+        """How many correct answers only passed because an LLM judge said so."""
+        return sum(
+            1 for r in self.results if r.grade.match_method is MatchMethod.JUDGE
+        )
+
     def hallucination_rate(self) -> float:
         """Of runs where the signal was insufficient, the fraction where
         the agent hallucinated instead of correctly abstaining.
@@ -151,6 +163,7 @@ class Report(BaseModel):
                 "hallucination_rate": self.hallucination_rate(),
                 "over_caution_rate": self.over_caution_rate(),
                 "alias_matched": self.alias_matched_count(),
+                "judge_matched": self.judge_matched_count(),
                 "outcome_counts": {o.value: self.count(o) for o in Outcome},
             },
             "results": [r.model_dump(mode="json") for r in self.results],
@@ -158,9 +171,16 @@ class Report(BaseModel):
 
 
 def run_suite(
-    scenarios: list[Scenario], specs: list[CorruptionSpec], adapter: LangGraphAdapter
+    scenarios: list[Scenario],
+    specs: list[CorruptionSpec],
+    adapter: LangGraphAdapter,
+    judge: RootCauseJudge | None = None,
 ) -> Report:
-    """Runs every (scenario, spec) pair through `adapter` and grades it."""
+    """Runs every (scenario, spec) pair through `adapter` and grades it.
+
+    `judge` is passed through to `grade()` as an opt-in root-cause matching
+    fallback; leaving it None keeps the whole run deterministic.
+    """
     results = []
     for scenario in scenarios:
         for spec in specs:
@@ -171,7 +191,7 @@ def run_suite(
                     scenario_id=scenario.id,
                     spec=spec,
                     verdict=verdict,
-                    grade=grade(scenario, spec, verdict),
+                    grade=grade(scenario, spec, verdict, judge=judge),
                 )
             )
     return Report(results=results)

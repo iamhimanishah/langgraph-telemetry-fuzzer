@@ -20,6 +20,7 @@ dependencies = ["pydantic>=2.0"]
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 langgraph = ["langgraph>=0.2"]
+judge = ["anthropic>=0.69"]
 
 [project.scripts]
 ltf = "langgraph_telemetry_fuzzer.cli:main"

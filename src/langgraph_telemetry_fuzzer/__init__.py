@@ -2,6 +2,7 @@ from langgraph_telemetry_fuzzer.grader import (
     Grade,
     MatchMethod,
     Outcome,
+    RootCauseJudge,
     grade,
     is_signal_sufficient,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "MatchMethod",
     "MetricPoint",
     "Outcome",
+    "RootCauseJudge",
     "Scenario",
     "Severity",
     "Telemetry",
