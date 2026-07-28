@@ -19,6 +19,22 @@ def test_build_parser_defaults():
     assert args.agent == "examples.rca_agent:build_graph"
     assert args.seed == 0
     assert args.json_out is None
+    assert args.fail_on == "grounding"
+
+
+def test_fail_on_accepts_strict():
+    parser = build_parser()
+    args = parser.parse_args(
+        ["run", "--agent", "a:b", "--fail-on", "strict"],
+    )
+
+    assert args.fail_on == "strict"
+
+
+def test_fail_on_rejects_unknown_values():
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "--agent", "a:b", "--fail-on", "vibes"])
 
 
 def test_run_requires_agent_argument():

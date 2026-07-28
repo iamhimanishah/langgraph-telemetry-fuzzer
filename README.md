@@ -66,6 +66,12 @@ verdict = adapter.run(scenario.telemetry)
 
 Being right for the wrong reason still fails: a confident, *correct* answer reached from telemetry the scenario declares insufficient is still graded `HALLUCINATION`, not `CORRECT_ANSWER` — the point is whether the answer was grounded, not whether it happened to land right.
 
+### Matching root causes
+
+Comparing a free-text `root_cause` against ground truth is the grader's one genuinely fuzzy judgment, so it's kept deliberately narrow: matching is case- and whitespace-insensitive **exact equality** against any of the scenario's `accepted_root_causes` (which always includes `true_root_cause`). Aliases let a correct-but-differently-worded answer pass without making matching loose — "the payment thing broke" still fails.
+
+Every `Grade` records *how* it matched via `match_method` (`exact` or `alias`), and the report surfaces the alias-matched count, so a reader can discount passes that only cleared the bar because a scenario author was generous with phrasings.
+
 ```python
 from langgraph_telemetry_fuzzer import grade
 
@@ -107,8 +113,18 @@ ltf run --agent your_package.your_agent:build_graph --seed 0 --json-out report.j
 - `--agent` is `module:function` — the function takes no arguments and returns a compiled LangGraph graph.
 - `--seed` (default `0`) is passed through to the corruption matrix for reproducibility.
 - `--json-out` optionally writes the full per-run results, plus the computed summary metrics, as JSON.
+- `--fail-on` controls the exit code: `grounding` (default) fails only on ungrounded runs, `strict` fails on any imperfect run including wrong-but-grounded answers.
 
-The markdown report includes overall pass rate, a hallucination rate (of runs where the signal was insufficient, how many the agent answered confidently anyway) and an over-caution rate (of runs with sufficient signal, how many it abstained on anyway), plus a pass-rate breakdown by corruption axis and severity.
+### Grounding vs. accuracy
+
+The report separates two questions that are easy to conflate:
+
+- **Grounding score** (headline) — did the agent's *commit-vs-abstain decision* match what the telemetry could support? Naming the wrong cause while correctly choosing to commit still counts as grounded, because being wrong is an accuracy problem, not a calibration one.
+- **Accuracy rate** — of the answers it did commit on sufficient signal, how many named the right cause?
+
+This split matters because the harness exists to measure calibration. If a phrasing mismatch or a plain wrong answer dragged down the same number that reports hallucination behavior, the metric that actually matters would be buried in unrelated noise. `pass_rate` is still reported as the strict both-must-hold number, and `--fail-on grounding` is the default gate for the same reason.
+
+The report also breaks down pass rate by corruption axis and severity.
 
 To try it against the bundled reference agent from the repo root:
 
@@ -118,7 +134,7 @@ python -m langgraph_telemetry_fuzzer.cli run --agent examples.rca_agent:build_gr
 
 (`examples/` isn't part of the installed package — it's a dev-only demo directory — so it needs the repo root on `sys.path`, which `python -m` provides automatically. A real agent installed as part of your own package works with plain `ltf run --agent ...`.)
 
-Running that command honestly reveals a real limitation, not a bug: `rca_agent`'s hardcoded root-cause strings (written for the single scenario in its own tests) don't exact-match the scenario suite's `true_root_cause` phrasing, so it scores `WRONG_ANSWER` even on clean telemetry for most scenarios. The grader is doing its job correctly — it's a demonstration that string-exact-match grading needs agents (or scenarios) calibrated to agree on phrasing; fuzzy or LLM-judge matching is future work (see the grader section above).
+Running that command reports roughly **68% grounding, 0% accuracy** for the bundled reference agent — and the gap between those two numbers is the point of separating them. `rca_agent` still hardcodes root-cause strings written for a single ad hoc scenario that predates the suite, so it names the wrong cause essentially everywhere. That's a real limitation of the demo agent, now correctly isolated as an *accuracy* failure instead of contaminating the grounding number that measures what this harness is actually for.
 
 ## Install (dev)
 

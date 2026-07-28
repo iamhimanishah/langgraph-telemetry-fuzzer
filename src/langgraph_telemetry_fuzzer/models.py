@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Severity(str, Enum):
@@ -79,6 +79,13 @@ class Scenario(BaseModel):
     `id` stay fixed so the grader always knows what "correct" means.
     `tolerant_up_to` tells the grader how much corruption still leaves
     enough signal to expect a committed (not abstained) answer.
+
+    `accepted_root_causes` lists every phrasing that counts as naming the
+    right cause. `true_root_cause` is always included automatically -- the
+    extras exist so a differently-worded but correct answer isn't graded
+    WRONG_ANSWER purely over phrasing. Aliases should be genuine restatements
+    of the same cause, not near-misses: accepting "database is slow" for
+    "connection pool exhaustion" would quietly inflate the agent's score.
     """
 
     id: str
@@ -87,6 +94,20 @@ class Scenario(BaseModel):
     true_root_cause: str
     system: str | None = None
     tolerant_up_to: ToleranceSpec = Field(default_factory=ToleranceSpec)
+    accepted_root_causes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _always_accept_the_true_root_cause(self) -> Scenario:
+        canonical = self.true_root_cause.strip().lower()
+        already_listed = any(
+            alias.strip().lower() == canonical for alias in self.accepted_root_causes
+        )
+        if not already_listed:
+            self.accepted_root_causes = [
+                self.true_root_cause,
+                *self.accepted_root_causes,
+            ]
+        return self
 
 
 class CorruptionSpec(BaseModel):

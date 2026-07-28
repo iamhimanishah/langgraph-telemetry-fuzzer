@@ -52,7 +52,9 @@ def _run(args: argparse.Namespace) -> int:
         args.json_out.write_text(json.dumps(report.to_json_dict(), indent=2))
         print(f"\nFull report written to {args.json_out}")
 
-    return 0 if report.pass_rate() == 1.0 else 1
+    if args.fail_on == "strict":
+        return 0 if report.pass_rate() == 1.0 else 1
+    return 0 if report.grounding_score() == 1.0 else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,6 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Write the full report as JSON to this path",
+    )
+    run_parser.add_argument(
+        "--fail-on",
+        choices=("grounding", "strict"),
+        default="grounding",
+        help="Exit non-zero on any ungrounded run (default), or on any "
+        "failure at all including wrong-but-grounded answers ('strict')",
     )
     run_parser.set_defaults(func=_run)
 

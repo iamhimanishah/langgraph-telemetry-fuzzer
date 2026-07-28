@@ -13,9 +13,31 @@ def render_markdown(report: Report) -> str:
         "# langgraph-telemetry-fuzzer report",
         "",
         f"- Total runs: {report.total}",
-        f"- Pass rate: {report.pass_rate():.0%}",
+        "",
+        "## Grounding (the headline metric)",
+        "",
+        "Did the agent commit or abstain in line with what the telemetry",
+        "supported? Independent of whether the named cause was right.",
+        "",
+        f"- **Grounding score: {report.grounding_score():.0%}**",
         f"- Hallucination rate (of insufficient-signal runs): {hallucination_pct:.0%}",
         f"- Over-caution rate (of sufficient-signal runs): {over_caution_pct:.0%}",
+        "",
+        "## Accuracy (tracked separately)",
+        "",
+        f"- Accuracy rate (of answers committed on sufficient signal): "
+        f"{report.accuracy_rate():.0%}",
+        f"- Strict pass rate (grounded *and* accurate): {report.pass_rate():.0%}",
+    ]
+
+    alias_matched = report.alias_matched_count()
+    if alias_matched:
+        lines.append(
+            f"- Note: {alias_matched} correct answer(s) matched via a scenario "
+            "alias rather than its canonical phrasing."
+        )
+
+    lines += [
         "",
         "## Outcome breakdown",
         "",
