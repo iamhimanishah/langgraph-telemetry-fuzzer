@@ -20,6 +20,17 @@ def test_build_parser_defaults():
     assert args.seed == 0
     assert args.json_out is None
     assert args.fail_on == "grounding"
+    assert args.judge is False
+
+
+def test_judge_is_opt_in_and_takes_a_model():
+    parser = build_parser()
+    args = parser.parse_args(
+        ["run", "--agent", "a:b", "--judge", "--judge-model", "claude-sonnet-5"]
+    )
+
+    assert args.judge is True
+    assert args.judge_model == "claude-sonnet-5"
 
 
 def test_fail_on_accepts_strict():

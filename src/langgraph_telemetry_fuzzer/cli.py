@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from langgraph_telemetry_fuzzer.adapter import LangGraphAdapter
+from langgraph_telemetry_fuzzer.judge import DEFAULT_MODEL as JUDGE_DEFAULT_MODEL
 from langgraph_telemetry_fuzzer.report import render_markdown
 from langgraph_telemetry_fuzzer.runner import run_suite
 from langgraph_telemetry_fuzzer.scenarios import ALL_SCENARIOS, single_axis_matrix
@@ -43,8 +44,18 @@ def _run(args: argparse.Namespace) -> int:
         print(f"ltf: {exc}", file=sys.stderr)
         return 2
 
+    judge = None
+    if args.judge:
+        from langgraph_telemetry_fuzzer.judge import LLMJudge
+
+        try:
+            judge = LLMJudge(model=args.judge_model)
+        except ImportError as exc:
+            print(f"ltf: {exc}", file=sys.stderr)
+            return 2
+
     specs = single_axis_matrix(seed=args.seed)
-    report = run_suite(ALL_SCENARIOS, specs, adapter)
+    report = run_suite(ALL_SCENARIOS, specs, adapter, judge=judge)
 
     print(render_markdown(report))
 
@@ -85,6 +96,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="grounding",
         help="Exit non-zero on any ungrounded run (default), or on any "
         "failure at all including wrong-but-grounded answers ('strict')",
+    )
+    run_parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="Opt in to an LLM judge as a fallback when exact and alias "
+        "root-cause matching both miss. Costs API calls, is nondeterministic, "
+        "and should not be used in CI — see the README",
+    )
+    run_parser.add_argument(
+        "--judge-model",
+        default=JUDGE_DEFAULT_MODEL,
+        help=f"Model for --judge (default: {JUDGE_DEFAULT_MODEL})",
     )
     run_parser.set_defaults(func=_run)
 

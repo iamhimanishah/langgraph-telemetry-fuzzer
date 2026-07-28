@@ -77,7 +77,20 @@ Being right for the wrong reason still fails: a confident, *correct* answer reac
 
 Comparing a free-text `root_cause` against ground truth is the grader's one genuinely fuzzy judgment, so it's kept deliberately narrow: matching is case- and whitespace-insensitive **exact equality** against any of the scenario's `accepted_root_causes` (which always includes `true_root_cause`). Aliases let a correct-but-differently-worded answer pass without making matching loose — "the payment thing broke" still fails.
 
-Every `Grade` records *how* it matched via `match_method` (`exact` or `alias`), and the report surfaces the alias-matched count, so a reader can discount passes that only cleared the bar because a scenario author was generous with phrasings.
+Every `Grade` records *how* it matched via `match_method` (`exact`, `alias`, or `judge`), and the report surfaces the alias- and judge-matched counts, so a reader can discount passes that only cleared the bar because a scenario author was generous with phrasings — or because a model said so.
+
+### LLM judge (opt-in, never in CI)
+
+When exact and alias matching both miss, an optional LLM judge can be consulted as a **third tier**:
+
+```bash
+pip install -e ".[judge]"
+ltf run --agent your.agent:build_graph --judge
+```
+
+It is deliberately a fallback, not a replacement. The deterministic checks run first, so the judge only ever sees the handful of claims they rejected — that bounds cost and keeps every other run reproducible. It also only affects **root-cause matching**, never the grounding decision: a judge that agreed with everything still could not turn a hallucination into a pass.
+
+**Don't enable it in CI.** It costs API calls, it isn't deterministic, and — most importantly — it introduces a second model whose own failure modes contaminate the measurement. A lenient judge quietly inflates the score of the exact harness built to catch overconfidence. Judge-matched passes are tagged `MatchMethod.JUDGE` and called out in the report so they can be discounted, and the judge fails closed: a refusal or an unparseable reply counts as *no match*, never as agreement.
 
 ```python
 from langgraph_telemetry_fuzzer import grade
@@ -86,7 +99,7 @@ result = grade(scenario, spec, verdict)
 print(result.outcome, result.passed, result.reason)
 ```
 
-This is rule-based, not an LLM judge — because `AgentVerdict` is a fixed shape, grading is just comparing a few fields, no free-text interpretation needed. See `tests/test_grader_integration.py` for the full pipeline (scenario → corrupt → real agent → grade) run end to end, including the naive `rca_agent`'s `delay` blind spot caught as an actual `HALLUCINATION` grade.
+Grounding is always rule-based — because `AgentVerdict` is a fixed shape, deciding whether the agent should have committed or abstained is just comparing a few fields, with no free-text interpretation and no model in the loop. (Root-cause *matching* has an opt-in LLM fallback; see below.) See `tests/test_grader_integration.py` for the full pipeline (scenario → corrupt → real agent → grade) run end to end, including the naive `rca_agent`'s `delay` blind spot caught as an actual `HALLUCINATION` grade.
 
 ## Scenario suite
 
@@ -121,6 +134,7 @@ ltf run --agent your_package.your_agent:build_graph --seed 0 --json-out report.j
 - `--seed` (default `0`) is passed through to the corruption matrix for reproducibility.
 - `--json-out` optionally writes the full per-run results, plus the computed summary metrics, as JSON.
 - `--fail-on` controls the exit code: `grounding` (default) fails only on ungrounded runs, `strict` fails on any imperfect run including wrong-but-grounded answers.
+- `--judge` / `--judge-model` opt in to the LLM judge described above (off by default).
 
 ### Grounding vs. accuracy
 
