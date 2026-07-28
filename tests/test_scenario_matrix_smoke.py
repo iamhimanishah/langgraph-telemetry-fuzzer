@@ -10,7 +10,7 @@ from langgraph_telemetry_fuzzer import (
     grade,
     is_signal_sufficient,
 )
-from scenarios import ALL_SCENARIOS, single_axis_matrix
+from langgraph_telemetry_fuzzer.scenarios import ALL_SCENARIOS, single_axis_matrix
 
 
 def test_every_scenario_survives_every_corruption_spec_without_error():

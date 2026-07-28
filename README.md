@@ -8,7 +8,7 @@ Agents that do root-cause analysis over observability data are only trustworthy 
 
 ## Status
 
-Core data model, corruption injectors, the LangGraph agent adapter, the rule-based grader, and a hand-crafted scenario suite are all in place. The CLI runner is next — see the roadmap below.
+All core pieces are in place: data model, corruption injectors, the LangGraph agent adapter, the rule-based grader, the scenario suite, and the `ltf` CLI runner. Docs/contribution polish is next — see the roadmap below.
 
 ## Core model
 
@@ -77,7 +77,7 @@ This is rule-based, not an LLM judge — because `AgentVerdict` is a fixed shape
 
 ## Scenario suite
 
-`scenarios/definitions.py` ships 6 hand-crafted incident fixtures, each a distinct failure signature with its own `tolerant_up_to` reasoned from that scenario's actual data shape (a sudden spike tolerates data loss differently than a gradual ramp, or a pattern whose causal story depends on event ordering):
+`langgraph_telemetry_fuzzer.scenarios` ships 6 hand-crafted incident fixtures, each a distinct failure signature with its own `tolerant_up_to` reasoned from that scenario's actual data shape (a sudden spike tolerates data loss differently than a gradual ramp, or a pattern whose causal story depends on event ordering). It's part of the installed package (not a dev-only fixture directory), so it's available out of the box after `pip install`.
 
 - **`checkout-error-spike`** — a sudden, sustained `error_rate` spike with plenty of redundant signal (tolerates moderate `missing`).
 - **`api-latency-degradation`** — `p99_latency_ms` climbs steadily; the signal is the *trend*, so it's sensitive to truncation.
@@ -87,7 +87,7 @@ This is rule-based, not an LLM judge — because `AgentVerdict` is a fixed shape
 - **`third-party-outage`** — a bursty, intermittent pattern rather than a clean step; the noisiest and least tolerant scenario in the suite.
 
 ```python
-from scenarios import ALL_SCENARIOS, single_axis_matrix
+from langgraph_telemetry_fuzzer.scenarios import ALL_SCENARIOS, single_axis_matrix
 
 for scenario in ALL_SCENARIOS:
     for spec in single_axis_matrix(seed=0):
@@ -95,6 +95,30 @@ for scenario in ALL_SCENARIOS:
 ```
 
 `single_axis_matrix()` generates the standard eval surface: one clean baseline, plus every (corruption axis, severity) pair swept independently — 13 specs total per scenario, rather than the full 256-combination cross product across all 4 axes at once.
+
+## CLI runner
+
+`ltf run --agent module:function` runs `ALL_SCENARIOS` × `single_axis_matrix()` against a LangGraph agent, prints a markdown report, and exits non-zero if anything failed (like a test runner):
+
+```bash
+ltf run --agent your_package.your_agent:build_graph --seed 0 --json-out report.json
+```
+
+- `--agent` is `module:function` — the function takes no arguments and returns a compiled LangGraph graph.
+- `--seed` (default `0`) is passed through to the corruption matrix for reproducibility.
+- `--json-out` optionally writes the full per-run results, plus the computed summary metrics, as JSON.
+
+The markdown report includes overall pass rate, a hallucination rate (of runs where the signal was insufficient, how many the agent answered confidently anyway) and an over-caution rate (of runs with sufficient signal, how many it abstained on anyway), plus a pass-rate breakdown by corruption axis and severity.
+
+To try it against the bundled reference agent from the repo root:
+
+```bash
+python -m langgraph_telemetry_fuzzer.cli run --agent examples.rca_agent:build_graph
+```
+
+(`examples/` isn't part of the installed package — it's a dev-only demo directory — so it needs the repo root on `sys.path`, which `python -m` provides automatically. A real agent installed as part of your own package works with plain `ltf run --agent ...`.)
+
+Running that command honestly reveals a real limitation, not a bug: `rca_agent`'s hardcoded root-cause strings (written for the single scenario in its own tests) don't exact-match the scenario suite's `true_root_cause` phrasing, so it scores `WRONG_ANSWER` even on clean telemetry for most scenarios. The grader is doing its job correctly — it's a demonstration that string-exact-match grading needs agents (or scenarios) calibrated to agree on phrasing; fuzzy or LLM-judge matching is future work (see the grader section above).
 
 ## Install (dev)
 
@@ -110,7 +134,7 @@ pytest
 3. ~~Reference LangGraph agent adapter + example agent~~
 4. ~~Rule-based grader (hallucination vs. correct abstention vs. over-caution)~~
 5. ~~Scenario suite with a corruption severity matrix~~
-6. CLI runner + report
+6. ~~CLI runner + report~~
 7. Docs and contribution guide
 
 ## License

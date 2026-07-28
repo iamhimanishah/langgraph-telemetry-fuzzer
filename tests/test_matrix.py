@@ -1,5 +1,9 @@
 from langgraph_telemetry_fuzzer import Severity
-from scenarios.matrix import AXES, NON_CLEAN_SEVERITIES, single_axis_matrix
+from langgraph_telemetry_fuzzer.scenarios.matrix import (
+    AXES,
+    NON_CLEAN_SEVERITIES,
+    single_axis_matrix,
+)
 
 
 def test_matrix_size_is_one_clean_plus_axes_times_severities():
