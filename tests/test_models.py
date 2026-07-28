@@ -39,6 +39,42 @@ def test_scenario_holds_ground_truth():
     assert len(scenario.telemetry.metrics) == 2
 
 
+def make_scenario(accepted_root_causes: list[str] | None = None) -> Scenario:
+    return Scenario(
+        id="error-spike-001",
+        description="Sudden error rate spike on checkout service",
+        telemetry=make_telemetry(),
+        true_root_cause="downstream payment API timeout",
+        accepted_root_causes=accepted_root_causes or [],
+    )
+
+
+def test_true_root_cause_is_accepted_by_default():
+    scenario = make_scenario()
+
+    assert scenario.accepted_root_causes == ["downstream payment API timeout"]
+
+
+def test_aliases_are_kept_alongside_the_true_root_cause():
+    scenario = make_scenario(accepted_root_causes=["payment provider timing out"])
+
+    assert scenario.accepted_root_causes == [
+        "downstream payment API timeout",
+        "payment provider timing out",
+    ]
+
+
+def test_true_root_cause_is_not_duplicated_when_listed_explicitly():
+    scenario = make_scenario(
+        accepted_root_causes=["DOWNSTREAM PAYMENT API TIMEOUT", "another phrasing"]
+    )
+
+    assert scenario.accepted_root_causes == [
+        "DOWNSTREAM PAYMENT API TIMEOUT",
+        "another phrasing",
+    ]
+
+
 def test_agent_verdict_defaults_to_uncommitted():
     verdict = AgentVerdict()
 

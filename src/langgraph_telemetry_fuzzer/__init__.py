@@ -1,5 +1,6 @@
 from langgraph_telemetry_fuzzer.grader import (
     Grade,
+    MatchMethod,
     Outcome,
     grade,
     is_signal_sufficient,
@@ -23,6 +24,7 @@ __all__ = [
     "CorruptionSpec",
     "Grade",
     "LogEntry",
+    "MatchMethod",
     "MetricPoint",
     "Outcome",
     "Scenario",

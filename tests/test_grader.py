@@ -3,6 +3,7 @@ from helpers import build_telemetry
 from langgraph_telemetry_fuzzer import (
     AgentVerdict,
     CorruptionSpec,
+    MatchMethod,
     Outcome,
     Scenario,
     Severity,
@@ -14,13 +15,17 @@ from langgraph_telemetry_fuzzer import (
 TRUE_ROOT_CAUSE = "downstream payment API timeout"
 
 
-def make_scenario(tolerant_up_to: ToleranceSpec = ToleranceSpec()) -> Scenario:
+def make_scenario(
+    tolerant_up_to: ToleranceSpec = ToleranceSpec(),
+    accepted_root_causes: list[str] | None = None,
+) -> Scenario:
     return Scenario(
         id="checkout-001",
         description="Checkout error spike",
         telemetry=build_telemetry(),
         true_root_cause=TRUE_ROOT_CAUSE,
         tolerant_up_to=tolerant_up_to,
+        accepted_root_causes=accepted_root_causes or [],
     )
 
 
@@ -74,6 +79,60 @@ def test_correct_answer_on_sufficient_signal():
 
     assert result.outcome == Outcome.CORRECT_ANSWER
     assert result.passed is True
+    assert result.match_method is MatchMethod.EXACT
+
+
+# -- grade: alias matching --------------------------------------------------
+
+
+def test_alias_phrasing_counts_as_a_correct_answer():
+    scenario = make_scenario(accepted_root_causes=["payment provider timing out"])
+    verdict = AgentVerdict(root_cause="payment provider timing out", confidence=0.9)
+
+    result = grade(scenario, CorruptionSpec(), verdict)
+
+    assert result.outcome == Outcome.CORRECT_ANSWER
+    assert result.passed is True
+    assert result.match_method is MatchMethod.ALIAS
+
+
+def test_canonical_phrasing_is_reported_as_exact_even_when_aliases_exist():
+    scenario = make_scenario(accepted_root_causes=["payment provider timing out"])
+    verdict = AgentVerdict(root_cause=TRUE_ROOT_CAUSE, confidence=0.9)
+
+    result = grade(scenario, CorruptionSpec(), verdict)
+
+    assert result.match_method is MatchMethod.EXACT
+
+
+def test_alias_matching_is_also_case_insensitive():
+    scenario = make_scenario(accepted_root_causes=["Payment Provider Timing Out"])
+    verdict = AgentVerdict(root_cause="  payment provider TIMING out ", confidence=0.9)
+
+    result = grade(scenario, CorruptionSpec(), verdict)
+
+    assert result.outcome == Outcome.CORRECT_ANSWER
+
+
+def test_unlisted_phrasing_is_still_a_wrong_answer():
+    """Aliases widen what counts as correct -- they don't make matching fuzzy."""
+    scenario = make_scenario(accepted_root_causes=["payment provider timing out"])
+    verdict = AgentVerdict(root_cause="the payment thing broke", confidence=0.9)
+
+    result = grade(scenario, CorruptionSpec(), verdict)
+
+    assert result.outcome == Outcome.WRONG_ANSWER
+    assert result.match_method is None
+
+
+def test_failing_grades_record_no_match_method():
+    scenario = make_scenario()
+    verdict = AgentVerdict(insufficient_signal=True)
+
+    result = grade(scenario, CorruptionSpec(), verdict)
+
+    assert result.outcome == Outcome.OVER_CAUTION
+    assert result.match_method is None
 
 
 def test_root_cause_match_is_case_and_whitespace_insensitive():

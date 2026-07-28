@@ -44,12 +44,25 @@ class Outcome(str, Enum):
 PASSING_OUTCOMES = frozenset({Outcome.CORRECT_ANSWER, Outcome.CORRECT_ABSTENTION})
 
 
+class MatchMethod(str, Enum):
+    """How an agent's root_cause was matched against the scenario's.
+
+    Recorded so a report reader can discount alias-matched passes: an EXACT
+    match is unambiguous, while an ALIAS match is only as trustworthy as the
+    scenario author's alias list.
+    """
+
+    EXACT = "exact"  # matched true_root_cause itself
+    ALIAS = "alias"  # matched one of the scenario's other accepted phrasings
+
+
 class Grade(BaseModel):
     """The result of grading a single (scenario, spec, verdict) run."""
 
     outcome: Outcome
     passed: bool
     reason: str
+    match_method: MatchMethod | None = None
 
 
 def is_signal_sufficient(scenario: Scenario, spec: CorruptionSpec) -> bool:
@@ -64,12 +77,19 @@ def is_signal_sufficient(scenario: Scenario, spec: CorruptionSpec) -> bool:
     return True
 
 
-def _matches_root_cause(verdict: AgentVerdict, scenario: Scenario) -> bool:
+def _match_root_cause(
+    verdict: AgentVerdict, scenario: Scenario
+) -> MatchMethod | None:
+    """Returns how the claimed root cause matched, or None if it didn't."""
     if verdict.root_cause is None:
-        return False
+        return None
     claimed = verdict.root_cause.strip().lower()
-    expected = scenario.true_root_cause.strip().lower()
-    return claimed == expected
+    if claimed == scenario.true_root_cause.strip().lower():
+        return MatchMethod.EXACT
+    for alias in scenario.accepted_root_causes:
+        if claimed == alias.strip().lower():
+            return MatchMethod.ALIAS
+    return None
 
 
 def grade(scenario: Scenario, spec: CorruptionSpec, verdict: AgentVerdict) -> Grade:
@@ -84,11 +104,20 @@ def grade(scenario: Scenario, spec: CorruptionSpec, verdict: AgentVerdict) -> Gr
                     "but the agent abstained anyway."
                 ),
             )
-        if _matches_root_cause(verdict, scenario):
+        match_method = _match_root_cause(verdict, scenario)
+        if match_method is not None:
+            if match_method is MatchMethod.EXACT:
+                reason = f"Correctly identified '{scenario.true_root_cause}'."
+            else:
+                reason = (
+                    f"Matched an accepted phrasing of "
+                    f"'{scenario.true_root_cause}' ({verdict.root_cause!r})."
+                )
             return Grade(
                 outcome=Outcome.CORRECT_ANSWER,
                 passed=True,
-                reason=f"Correctly identified '{scenario.true_root_cause}'.",
+                reason=reason,
+                match_method=match_method,
             )
         return Grade(
             outcome=Outcome.WRONG_ANSWER,

@@ -1,7 +1,12 @@
 from helpers import build_telemetry
 
 from langgraph_telemetry_fuzzer import AgentVerdict, CorruptionSpec, Scenario, Severity
-from langgraph_telemetry_fuzzer.grader import PASSING_OUTCOMES, Grade, Outcome
+from langgraph_telemetry_fuzzer.grader import (
+    PASSING_OUTCOMES,
+    Grade,
+    MatchMethod,
+    Outcome,
+)
 from langgraph_telemetry_fuzzer.runner import Report, RunResult, run_suite
 
 
@@ -26,12 +31,21 @@ def make_scenario(scenario_id: str = "s1") -> Scenario:
     )
 
 
-def make_result(outcome: Outcome, spec: CorruptionSpec | None = None) -> RunResult:
+def make_result(
+    outcome: Outcome,
+    spec: CorruptionSpec | None = None,
+    match_method: MatchMethod | None = None,
+) -> RunResult:
     return RunResult(
         scenario_id="s1",
         spec=spec or CorruptionSpec(),
         verdict=AgentVerdict(),
-        grade=Grade(outcome=outcome, passed=outcome in PASSING_OUTCOMES, reason="test"),
+        grade=Grade(
+            outcome=outcome,
+            passed=outcome in PASSING_OUTCOMES,
+            reason="test",
+            match_method=match_method,
+        ),
     )
 
 
@@ -70,6 +84,88 @@ def test_pass_rate():
 
 def test_pass_rate_of_empty_report_is_zero():
     assert Report(results=[]).pass_rate() == 0.0
+
+
+# -- Report.grounding_score / accuracy_rate --------------------------------
+
+
+def test_grounding_score_counts_wrong_but_grounded_answers_as_grounded():
+    """A wrong answer is an accuracy failure, not a calibration one -- the
+    agent still correctly chose to commit when the signal supported it.
+    """
+    report = Report(
+        results=[
+            make_result(Outcome.CORRECT_ANSWER),
+            make_result(Outcome.WRONG_ANSWER),
+            make_result(Outcome.CORRECT_ABSTENTION),
+            make_result(Outcome.HALLUCINATION),
+        ]
+    )
+
+    assert report.grounding_score() == 0.75
+    assert report.pass_rate() == 0.5
+
+
+def test_grounding_score_penalizes_hallucination_and_over_caution():
+    report = Report(
+        results=[
+            make_result(Outcome.HALLUCINATION),
+            make_result(Outcome.OVER_CAUTION),
+        ]
+    )
+
+    assert report.grounding_score() == 0.0
+
+
+def test_grounding_score_of_empty_report_is_zero():
+    assert Report(results=[]).grounding_score() == 0.0
+
+
+def test_accuracy_rate_only_considers_committed_answers():
+    report = Report(
+        results=[
+            make_result(Outcome.CORRECT_ANSWER),
+            make_result(Outcome.WRONG_ANSWER),
+            make_result(Outcome.CORRECT_ABSTENTION),  # excluded: never committed
+            make_result(Outcome.OVER_CAUTION),  # excluded: never committed
+        ]
+    )
+
+    assert report.accuracy_rate() == 0.5
+
+
+def test_accuracy_rate_is_zero_when_nothing_was_committed():
+    report = Report(results=[make_result(Outcome.CORRECT_ABSTENTION)])
+
+    assert report.accuracy_rate() == 0.0
+
+
+def test_phrasing_noise_does_not_drag_down_grounding_score():
+    """The regression this metric split exists to prevent: an agent that
+    always commits on sufficient signal but words every answer differently
+    should score 100% grounded and 0% accurate, not 0% overall.
+    """
+    report = Report(results=[make_result(Outcome.WRONG_ANSWER) for _ in range(5)])
+
+    assert report.grounding_score() == 1.0
+    assert report.accuracy_rate() == 0.0
+    assert report.pass_rate() == 0.0
+
+
+# -- Report.alias_matched_count --------------------------------------------
+
+
+def test_alias_matched_count_only_counts_alias_matches():
+    report = Report(
+        results=[
+            make_result(Outcome.CORRECT_ANSWER, match_method=MatchMethod.EXACT),
+            make_result(Outcome.CORRECT_ANSWER, match_method=MatchMethod.ALIAS),
+            make_result(Outcome.CORRECT_ANSWER, match_method=MatchMethod.ALIAS),
+            make_result(Outcome.WRONG_ANSWER),
+        ]
+    )
+
+    assert report.alias_matched_count() == 2
 
 
 # -- Report.hallucination_rate / over_caution_rate ------------------------
