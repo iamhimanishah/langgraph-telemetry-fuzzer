@@ -18,7 +18,7 @@ def test_agent_commits_to_a_root_cause_on_clean_telemetry(adapter):
     verdict = adapter.run(build_spiking_telemetry())
 
     assert verdict.insufficient_signal is False
-    assert verdict.root_cause == "downstream dependency timeout"
+    assert verdict.root_cause == "downstream payment API timeout"
     assert verdict.confidence > 0
 
 
@@ -43,7 +43,7 @@ def test_agent_still_answers_under_mild_missing_corruption(adapter):
     verdict = adapter.run(corrupted)
 
     assert verdict.insufficient_signal is False
-    assert verdict.root_cause == "downstream dependency timeout"
+    assert verdict.root_cause == "downstream payment API timeout"
 
 
 def test_agent_abstains_when_drift_renames_the_metric_it_looks_for(adapter):
@@ -70,4 +70,4 @@ def test_agent_is_naive_about_severe_delay(adapter):
     verdict = adapter.run(corrupted)
 
     assert verdict.insufficient_signal is False
-    assert verdict.root_cause == "downstream dependency timeout"
+    assert verdict.root_cause == "downstream payment API timeout"

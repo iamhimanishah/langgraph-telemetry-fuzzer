@@ -50,7 +50,14 @@ adapter = LangGraphAdapter(build_graph())
 verdict = adapter.run(scenario.telemetry)
 ```
 
-**`examples/rca_agent.py`** is a small, offline, rule-based reference agent (two LangGraph nodes: `analyze` → `decide`) used to dogfood the injectors — no LLM calls or API keys needed. It's deliberately naive in one specific way: it checks how many matching metric points survived, but never checks whether their timestamps make sense. That blind spot shows up under the `delay` injector, where it confidently repeats its clean-data answer even after severe timestamp skew — exactly the overconfidence failure mode this whole project exists to catch. See `tests/test_rca_agent.py` for that behavior demonstrated against real corrupted telemetry.
+**`examples/rca_agent.py`** is a small, offline, rule-based reference agent (two LangGraph nodes: `analyze` → `decide`) used to dogfood the injectors — no LLM calls or API keys needed. It works like a runbook-driven RCA tool: a table of known metric signatures, each mapped to the cause it usually indicates.
+
+Two limitations are deliberate:
+
+1. **No timestamp sanity check** — it counts how many matching points survived, never how stale they are, so severe `delay` corruption yields the same confident answer as clean data. This is the overconfidence failure mode the whole project exists to catch.
+2. **No log correlation** — it reads metrics only, so it can't distinguish the two scenarios that both spike `error_rate` and necessarily gets one wrong.
+
+See `tests/test_rca_agent.py` for both behaviors demonstrated against real corrupted telemetry.
 
 ## Grader
 
@@ -134,7 +141,21 @@ python -m langgraph_telemetry_fuzzer.cli run --agent examples.rca_agent:build_gr
 
 (`examples/` isn't part of the installed package — it's a dev-only demo directory — so it needs the repo root on `sys.path`, which `python -m` provides automatically. A real agent installed as part of your own package works with plain `ltf run --agent ...`.)
 
-Running that command reports roughly **68% grounding, 0% accuracy** for the bundled reference agent — and the gap between those two numbers is the point of separating them. `rca_agent` still hardcodes root-cause strings written for a single ad hoc scenario that predates the suite, so it names the wrong cause essentially everywhere. That's a real limitation of the demo agent, now correctly isolated as an *accuracy* failure instead of contaminating the grounding number that measures what this harness is actually for.
+### What the reference agent actually scores
+
+Running that command reports roughly **32% grounding, 77% accuracy** — and the shape of that result is the most useful thing in this repo.
+
+The per-axis table makes the diagnosis legible:
+
+| Axis | Pass rate | Why |
+| --- | --- | --- |
+| `delay` (all severities) | 0% | Timestamps are skewed, but counts and values are untouched — so the agent answers exactly as confidently as it would on clean data. This is its documented blind spot, reproduced 18 times over. |
+| `drift` severe | 100% | Every metric is renamed, the agent finds nothing it recognizes, and abstains. |
+| `truncate` severe | 100% | Only 15% of the window survives, dropping below `MIN_POINTS`, so it abstains. |
+| `drift`/`truncate` mild–moderate | 0% | Enough points survive to clear `MIN_POINTS`, so it commits anyway. |
+| clean | 83% | The one miss is `deployment-regression`: distinguishing it from `checkout-error-spike` needs the deploy marker in the logs, and this agent reads metrics only. |
+
+Note the pattern: the agent abstains only when it *cannot see data at all*, never because it judged the data untrustworthy. Those are very different behaviors that look identical from the outside until you corrupt the input in a way that degrades trustworthiness without degrading volume — which is exactly what the `delay` injector does.
 
 ## Install (dev)
 

@@ -21,7 +21,7 @@ langgraph = pytest.importorskip("langgraph")
 
 from examples.rca_agent import build_graph  # noqa: E402
 
-TRUE_ROOT_CAUSE = "downstream dependency timeout"
+TRUE_ROOT_CAUSE = "downstream payment API timeout"
 
 
 @pytest.fixture
