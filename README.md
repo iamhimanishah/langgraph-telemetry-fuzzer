@@ -8,7 +8,7 @@ Agents that do root-cause analysis over observability data are only trustworthy 
 
 ## Status
 
-Core data model, corruption injectors, the LangGraph agent adapter, and the rule-based grader are in place. The CLI runner is next — see the roadmap below.
+Core data model, corruption injectors, the LangGraph agent adapter, the rule-based grader, and a hand-crafted scenario suite are all in place. The CLI runner is next — see the roadmap below.
 
 ## Core model
 
@@ -75,6 +75,27 @@ print(result.outcome, result.passed, result.reason)
 
 This is rule-based, not an LLM judge — because `AgentVerdict` is a fixed shape, grading is just comparing a few fields, no free-text interpretation needed. See `tests/test_grader_integration.py` for the full pipeline (scenario → corrupt → real agent → grade) run end to end, including the naive `rca_agent`'s `delay` blind spot caught as an actual `HALLUCINATION` grade.
 
+## Scenario suite
+
+`scenarios/definitions.py` ships 6 hand-crafted incident fixtures, each a distinct failure signature with its own `tolerant_up_to` reasoned from that scenario's actual data shape (a sudden spike tolerates data loss differently than a gradual ramp, or a pattern whose causal story depends on event ordering):
+
+- **`checkout-error-spike`** — a sudden, sustained `error_rate` spike with plenty of redundant signal (tolerates moderate `missing`).
+- **`api-latency-degradation`** — `p99_latency_ms` climbs steadily; the signal is the *trend*, so it's sensitive to truncation.
+- **`cascading-dependency-failure`** — `db_latency_ms` spikes, then `api_error_rate` follows; identifying which caused which depends on event ordering, so it declares zero tolerance for `delay`.
+- **`disk-saturation`** — a declining metric plus ENOSPC log lines carrying the specific evidence a metric alone wouldn't explain.
+- **`deployment-regression`** — an `error_rate` step tied to a deploy marker log line; again ordering-sensitive.
+- **`third-party-outage`** — a bursty, intermittent pattern rather than a clean step; the noisiest and least tolerant scenario in the suite.
+
+```python
+from scenarios import ALL_SCENARIOS, single_axis_matrix
+
+for scenario in ALL_SCENARIOS:
+    for spec in single_axis_matrix(seed=0):
+        ...  # apply_corruptions -> run agent -> grade
+```
+
+`single_axis_matrix()` generates the standard eval surface: one clean baseline, plus every (corruption axis, severity) pair swept independently — 13 specs total per scenario, rather than the full 256-combination cross product across all 4 axes at once.
+
 ## Install (dev)
 
 ```bash
@@ -88,7 +109,7 @@ pytest
 2. ~~Corruption injectors: missing data, delayed timestamps, schema drift, truncation~~
 3. ~~Reference LangGraph agent adapter + example agent~~
 4. ~~Rule-based grader (hallucination vs. correct abstention vs. over-caution)~~
-5. Scenario suite with a corruption severity matrix
+5. ~~Scenario suite with a corruption severity matrix~~
 6. CLI runner + report
 7. Docs and contribution guide
 
