@@ -6,6 +6,10 @@ from langgraph_telemetry_fuzzer.grader import (
     grade,
     is_signal_sufficient,
 )
+from langgraph_telemetry_fuzzer.guardrail import (
+    TrustMetadata,
+    compute_trust_metadata,
+)
 from langgraph_telemetry_fuzzer.injectors.compose import apply_corruptions
 from langgraph_telemetry_fuzzer.models import (
     AgentVerdict,
@@ -33,7 +37,9 @@ __all__ = [
     "Severity",
     "Telemetry",
     "ToleranceSpec",
+    "TrustMetadata",
     "apply_corruptions",
+    "compute_trust_metadata",
     "grade",
     "is_signal_sufficient",
 ]
