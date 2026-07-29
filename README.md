@@ -193,17 +193,21 @@ window end, which is the faithful stand-in for "now".
 
 ### Detection logic
 
-Three deliberately orthogonal signals:
+Four deliberately orthogonal signals, one per corruption axis:
 
 | Signal | Catches | How |
 |---|---|---|
 | `completeness` | `missing` | Observed points vs. what each series' own span implies at the expected interval |
 | `monotonic` | `delay` | Timestamps non-decreasing **as delivered**, checked **per series** |
 | `staleness_seconds` | `truncate` | Gap between `query_time` and the newest point; negative means future-dated |
+| `schema_match` | `drift` | Declared `schema_version` vs. the one the consumer was built to read |
 
-`confidence` is `"low"` if completeness is below the floor (0.8), ordering
-is broken, or the window is stale; `"high"` otherwise. `reason` records
-which checks failed.
+`confidence` is `"low"` if any check fails, `"high"` otherwise. `reason`
+records which ones.
+
+`expected_schema_version`, like `query_time`, is **configuration rather
+than ground truth** — a real consumer knows which schema its parsing code
+targets, independently of what arrives. Leave it `None` to skip the check.
 
 Two details in `monotonic` are load-bearing:
 
@@ -227,17 +231,44 @@ against `ALL_SCENARIOS`, graded with `grade()` unmodified:
 | Variant | clean | missing | delay | drift | truncate | **overall** |
 |---|---|---|---|---|---|---|
 | `rca_agent` (baseline) | 100% | 33% | **0%** | 33% | 39% | **32%** |
-| `rca_agent` + guardrail | 100% | 83% | **100%** | 72% | 94% | **88%** |
+| `rca_agent` + guardrail | 100% | 83% | **100%** | **100%** | 94% | **95%** |
 
 | Variant | correct_answer | correct_abstention | hallucination | wrong_answer | over_caution |
 |---|---|---|---|---|---|
 | baseline | 10 | 12 | 53 | 3 | 0 |
-| + guardrail | 10 | 57 | **8** | 2 | 1 |
+| + guardrail | 10 | 62 | **3** | 2 | 1 |
 
-`delay` goes 0% → 100%. The quality of that matters more than the number:
-`correct_answer` stays at 10 and `over_caution` rises only from 0 to 1, so
-45 hallucinations became correct abstentions at the cost of a single false
-one. The guardrail is not buying grounding by making the agent timid.
+`delay` goes 0% → 100% and `drift` 33% → 100%. The quality of that matters
+more than the headline: `correct_answer` stays at 10 and `over_caution`
+rises only from 0 to 1, so 50 hallucinations became correct abstentions at
+the cost of a single false one. The guardrail is not buying grounding by
+making the agent timid.
+
+### Why the remaining axes don't reach 100%
+
+`missing` (83%) and `truncate` (94%) leave four ungrounded runs, and they
+are **not** missing signals — they are a global heuristic meeting
+per-scenario hand-set tolerances. `third-party-outage` declares zero
+tolerance for missing data, but dropping 15% of points leaves completeness
+at 0.85, above the 0.8 floor. `disk-saturation` *tolerates*
+`truncate=mild`, but the guardrail flags it anyway. The guardrail cannot
+reconcile these, because `tolerant_up_to` is ground truth it is forbidden
+to read.
+
+Sweeping the thresholds shows the trade-off is irreducible:
+
+| completeness floor | hallucinations | over-caution | grounding |
+|---|---|---|---|
+| **0.8** (default) | 3 | 1 | 95% |
+| 0.9 | 1 | 2 | 96% |
+| 0.95 | 1 | 2 | 96% |
+| 0.99 | 1 | 5 | 92% |
+
+Tightening trades hallucinations for over-caution and peaks at 96%. The
+default stays at 0.8: the gain is a single run, and choosing a threshold
+after seeing which scores best is fitting to this scenario suite rather
+than to the problem. Both `completeness_floor` and `staleness_limit_seconds`
+are parameters if a caller's cost asymmetry differs.
 
 ### Does a real LLM honour the signal?
 

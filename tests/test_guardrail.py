@@ -189,7 +189,58 @@ def test_to_dict_is_tool_boundary_safe():
         "completeness",
         "monotonic",
         "staleness_seconds",
+        "schema_match",
         "confidence",
         "reason",
     }
     assert isinstance(payload["monotonic"], bool)
+
+
+# -- drift: schema_match -----------------------------------------------------
+
+
+@pytest.mark.parametrize("severity", DELAY_SEVERITIES)
+def test_schema_mismatch_fires_on_drift_at_every_severity(severity):
+    """The drift injector bumps schema_version at every non-none severity,
+    including mild, where only a fifth of metric names change and
+    completeness barely moves.
+    """
+    spec = CorruptionSpec(seed=0, drift=severity)
+
+    for scenario in ALL_SCENARIOS:
+        corrupted = apply_corruptions(scenario.telemetry, spec)
+        trust = compute_trust_metadata(
+            corrupted,
+            query_time_for(scenario.telemetry),
+            INTERVAL,
+            expected_schema_version="1.0",
+        )
+
+        assert trust.schema_match is False, scenario.id
+        assert trust.confidence == "low", scenario.id
+        assert "schema" in trust.reason
+
+
+def test_matching_schema_does_not_lower_confidence():
+    telemetry = build_telemetry()
+
+    trust = compute_trust_metadata(
+        telemetry, query_time_for(telemetry), INTERVAL, expected_schema_version="1.0"
+    )
+
+    assert trust.schema_match is True
+    assert trust.confidence == "high"
+
+
+def test_schema_check_is_skipped_when_no_expectation_is_given():
+    """Callers that do not know their schema opt out by leaving it None,
+    rather than being forced into a guess that fails open or closed.
+    """
+    corrupted = apply_corruptions(
+        build_telemetry(), CorruptionSpec(seed=0, drift=Severity.SEVERE)
+    )
+
+    qt = query_time_for(build_telemetry())
+    trust = compute_trust_metadata(corrupted, qt, INTERVAL)
+
+    assert trust.schema_match is True
