@@ -8,7 +8,7 @@ Agents that do root-cause analysis over observability data are only trustworthy 
 
 ## Status
 
-All core pieces are in place: data model, corruption injectors, the LangGraph agent adapter, the rule-based grader, the scenario suite, and the `ltf` CLI runner. Docs/contribution polish is next — see the roadmap below.
+All core pieces are in place: data model, corruption injectors, the LangGraph agent adapter, the rule-based grader, the scenario suite, the `ltf` CLI runner, and a guardrail layer that closes the reference agent's `delay` blind spot. Docs/contribution polish is next — see the roadmap below.
 
 ## Core model
 
@@ -171,6 +171,130 @@ The per-axis table makes the diagnosis legible:
 
 Note the pattern: the agent abstains only when it *cannot see data at all*, never because it judged the data untrustworthy. Those are very different behaviors that look identical from the outside until you corrupt the input in a way that degrades trustworthiness without degrading volume — which is exactly what the `delay` injector does.
 
+## Guardrail layer
+
+The reference agent's worst axis is `delay`: **0% grounding at every
+severity**, because it counts surviving datapoints but never inspects
+timestamps. `guardrail.py` closes that gap by computing trust signals from
+the telemetry itself, before any reasoning happens.
+
+### The no-ground-truth constraint
+
+`compute_trust_metadata(telemetry, query_time, expected_interval_seconds)`
+sees **only** the possibly-corrupted `Telemetry` and a clock. It never
+receives the `CorruptionSpec`, `true_root_cause`, or `tolerant_up_to` —
+exactly like a production guardrail, which never learns which corruption
+(if any) its data went through. A guardrail allowed to read the spec would
+score perfectly and measure nothing.
+
+`query_time` is exogenous: it says *when the question was asked*, not what
+was done to the data. The MCP server supplies the scenario's own incident
+window end, which is the faithful stand-in for "now".
+
+### Detection logic
+
+Three deliberately orthogonal signals:
+
+| Signal | Catches | How |
+|---|---|---|
+| `completeness` | `missing` | Observed points vs. what each series' own span implies at the expected interval |
+| `monotonic` | `delay` | Timestamps non-decreasing **as delivered**, checked **per series** |
+| `staleness_seconds` | `truncate` | Gap between `query_time` and the newest point; negative means future-dated |
+
+`confidence` is `"low"` if completeness is below the floor (0.8), ordering
+is broken, or the window is stale; `"high"` otherwise. `reason` records
+which checks failed.
+
+Two details in `monotonic` are load-bearing:
+
+- **As-delivered, not sorted.** Sorting first makes the check trivially
+  true and detects nothing. The `delay` injector skews timestamps while
+  leaving list position intact, so the disagreement between arrival order
+  and timestamp order *is* the signal.
+- **Per series, not across the flat list.** A bundle carrying two metrics
+  concatenated restarts its clock at the boundary, so a flat-list check
+  reports a false positive on perfectly clean telemetry.
+
+Staleness scales with the feed's cadence (`3 x expected_interval_seconds`)
+rather than an absolute wall-clock figure — a 1Hz feed 17s stale has missed
+17 consecutive samples, while a 1/hour feed 17s old is fresh.
+
+### Results
+
+`python scripts/compare_guardrail.py --seed 0`, over `single_axis_matrix`
+against `ALL_SCENARIOS`, graded with `grade()` unmodified:
+
+| Variant | clean | missing | delay | drift | truncate | **overall** |
+|---|---|---|---|---|---|---|
+| `rca_agent` (baseline) | 100% | 33% | **0%** | 33% | 39% | **32%** |
+| `rca_agent` + guardrail | 100% | 83% | **100%** | 72% | 94% | **88%** |
+
+| Variant | correct_answer | correct_abstention | hallucination | wrong_answer | over_caution |
+|---|---|---|---|---|---|
+| baseline | 10 | 12 | 53 | 3 | 0 |
+| + guardrail | 10 | 57 | **8** | 2 | 1 |
+
+`delay` goes 0% → 100%. The quality of that matters more than the number:
+`correct_answer` stays at 10 and `over_caution` rises only from 0 to 1, so
+45 hallucinations became correct abstentions at the cost of a single false
+one. The guardrail is not buying grounding by making the agent timid.
+
+### Does a real LLM honour the signal?
+
+`examples/llm_rca_agent.py` is a tool-calling agent on a real model, run
+against the guarded and raw MCP tools. Measured on the `delay` axis over
+two scenarios (6 runs each) — a deliberately scoped run, see caveat below:
+
+| Variant | delay grounding | hallucinations |
+|---|---|---|
+| `llm_rca_agent` + raw | 83% | 1 |
+| `llm_rca_agent` + guarded | **100%** | **0** |
+
+Worth reading carefully: the *unguarded* LLM already scores 83%, far above
+`rca_agent`'s 0%, because a capable reasoner can notice scrambled
+timestamps unaided. The guardrail's value is therefore largest for agents
+that cannot self-assess (0% → 100%) and smaller but still real as a
+deterministic backstop for ones that can (83% → 100%).
+
+### Known limitation: the fixtures under-determine their own answers
+
+The LLM variants are reported on `delay` only, not the full matrix, because
+the scenario fixtures confound the rest. Two observed examples:
+
+- On `checkout-error-spike` the telemetry is a single `error_rate` series
+  with no logs or traces. The model abstains, correctly noting that "bad
+  deploy, upstream dependency failure, connection pool exhaustion, and
+  credential expiry all remain equally consistent with the data" — and is
+  graded `OVER_CAUTION`.
+- On `disk-saturation` it answers "disk space exhaustion from a
+  constant-rate runaway writer (specific writer unidentifiable from
+  available telemetry)" — substantively right — and is graded
+  `WRONG_ANSWER` against "log directory filling the disk due to disabled
+  log rotation", which names the very detail the model correctly said the
+  data does not contain.
+
+`rca_agent` scores well on these because its lookup table *is* the answer
+key, not because it reasons. A real reasoner is penalised for the honesty
+this harness exists to reward. Fixing it means enriching the fixtures so
+each `true_root_cause` is actually derivable from its telemetry — out of
+scope here, since the scenario suite was to be left unmodified.
+
+### Running it
+
+```bash
+pip install -e ".[dev,langgraph,llm,mcp]"
+
+# deterministic variants, no API key needed
+python scripts/compare_guardrail.py --variants 1,1g --seed 0
+
+# LLM variants (needs ANTHROPIC_API_KEY); scope to keep cost down
+python scripts/compare_guardrail.py --variants 2,3 --axes delay \
+    --scenarios cascading-dependency-failure --seed 0 --json-out report.json
+
+# MCP server exposing query_telemetry / query_telemetry_raw
+python -m mcp_guardrail.server
+```
+
 ## Install (dev)
 
 ```bash
@@ -186,7 +310,10 @@ pytest
 4. ~~Rule-based grader (hallucination vs. correct abstention vs. over-caution)~~
 5. ~~Scenario suite with a corruption severity matrix~~
 6. ~~CLI runner + report~~
-7. Docs and contribution guide
+7. ~~Guardrail layer: trust signals that close the `delay` blind spot~~
+8. Enrich scenario fixtures so each `true_root_cause` is derivable from its
+   own telemetry (see the known limitation under Guardrail layer)
+9. Docs and contribution guide
 
 ## License
 
