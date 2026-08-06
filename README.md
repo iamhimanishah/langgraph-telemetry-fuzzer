@@ -231,18 +231,16 @@ against `ALL_SCENARIOS`, graded with `grade()` unmodified:
 | Variant | clean | missing | delay | drift | truncate | **overall** |
 |---|---|---|---|---|---|---|
 | `rca_agent` (baseline) | 100% | 33% | **0%** | 33% | 39% | **32%** |
-| `rca_agent` + guardrail | 100% | 83% | **100%** | **100%** | 94% | **95%** |
+| `rca_agent` + guardrail | 100% | 89% | **100%** | **100%** | 94% | **96%** |
 
 | Variant | correct_answer | correct_abstention | hallucination | wrong_answer | over_caution |
 |---|---|---|---|---|---|
 | baseline | 10 | 12 | 53 | 3 | 0 |
-| + guardrail | 10 | 62 | **3** | 2 | 1 |
+| + guardrail | 9 | 64 | **1** | 2 | 2 |
 
-`delay` goes 0% → 100% and `drift` 33% → 100%. The quality of that matters
-more than the headline: `correct_answer` stays at 10 and `over_caution`
-rises only from 0 to 1, so 50 hallucinations became correct abstentions at
-the cost of a single false one. The guardrail is not buying grounding by
-making the agent timid.
+`delay` goes 0% → 100% and `drift` 33% → 100%, with hallucinations falling
+53 → 1. `over_caution` rises only 0 → 2, so the grounding is not bought by
+making the agent uniformly timid.
 
 ### Why the remaining axes don't reach 100%
 
@@ -259,9 +257,8 @@ Sweeping the thresholds shows the trade-off is irreducible:
 
 | completeness floor | hallucinations | over-caution | grounding |
 |---|---|---|---|
-| **0.8** (default) | 3 | 1 | 95% |
+| **0.8** (default) | 1 | 2 | 96% |
 | 0.9 | 1 | 2 | 96% |
-| 0.95 | 1 | 2 | 96% |
 | 0.99 | 1 | 5 | 92% |
 
 Tightening trades hallucinations for over-caution and peaks at 96%. The
@@ -287,28 +284,33 @@ timestamps unaided. The guardrail's value is therefore largest for agents
 that cannot self-assess (0% → 100%) and smaller but still real as a
 deterministic backstop for ones that can (83% → 100%).
 
-### Known limitation: the fixtures under-determine their own answers
+### Fixture derivability
 
-The LLM variants are reported on `delay` only, not the full matrix, because
-the scenario fixtures confound the rest. Two observed examples:
+The fixtures originally encoded causes their own telemetry could not
+support: `checkout-error-spike` shipped a lone `error_rate` curve while
+claiming "downstream payment API timeout". A reasoning agent abstained —
+correctly — and was graded `OVER_CAUTION`, while `rca_agent` scored well
+only because its lookup table *is* the answer key.
 
-- On `checkout-error-spike` the telemetry is a single `error_rate` series
-  with no logs or traces. The model abstains, correctly noting that "bad
-  deploy, upstream dependency failure, connection pool exhaustion, and
-  credential expiry all remain equally consistent with the data" — and is
-  graded `OVER_CAUTION`.
-- On `disk-saturation` it answers "disk space exhaustion from a
-  constant-rate runaway writer (specific writer unidentifiable from
-  available telemetry)" — substantively right — and is graded
-  `WRONG_ANSWER` against "log directory filling the disk due to disabled
-  log rotation", which names the very detail the model correctly said the
-  data does not contain.
+Each scenario now carries corroborating evidence, and the difference is
+measurable. On clean telemetry, unguarded, before and after:
 
-`rca_agent` scores well on these because its lookup table *is* the answer
-key, not because it reasons. A real reasoner is penalised for the honesty
-this harness exists to reward. Fixing it means enriching the fixtures so
-each `true_root_cause` is actually derivable from its telemetry — out of
-scope here, since the scenario suite was to be left unmodified.
+| Scenario | Before enrichment | After enrichment |
+|---|---|---|
+| `checkout-error-spike` | *abstained* — cause not derivable | "Unresponsive **payment-api** upstream dependency causing **30s request timeouts**" |
+| `disk-saturation` | "runaway writer (**specific writer unidentifiable**)" | "**Disabled log rotation on /var/log/app** causing unbounded log growth" |
+
+Two conventions make this work with the guardrail: every series stays dense
+at 1Hz (a sparse event stream reads as 55% complete and would flag clean
+data), and corroborating metrics *lead* the symptom so `delay` has real
+causal structure to destroy.
+
+**Derivability and matching are separate problems.** The answers above are
+substantively correct but phrased differently from `true_root_cause`, so
+exact matching still scores them `WRONG_ANSWER`. That is what the alias and
+judge tiers are for — with `--judge`, both grade `CORRECT_ANSWER` tagged
+`MatchMethod.JUDGE`. Enrichment fixed derivability; matching was already
+handled.
 
 ### Running it
 
