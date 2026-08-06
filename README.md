@@ -344,8 +344,8 @@ pytest
 5. ~~Scenario suite with a corruption severity matrix~~
 6. ~~CLI runner + report~~
 7. ~~Guardrail layer: trust signals that close the `delay` blind spot~~
-8. Enrich scenario fixtures so each `true_root_cause` is derivable from its
-   own telemetry (see the known limitation under Guardrail layer)
+8. ~~Enrich scenario fixtures so each `true_root_cause` is derivable from its
+   own telemetry~~
 9. Docs and contribution guide
 
 ## License
