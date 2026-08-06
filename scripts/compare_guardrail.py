@@ -50,6 +50,7 @@ from langgraph_telemetry_fuzzer.scenarios import (  # noqa: E402
 )
 
 EXPECTED_INTERVAL_SECONDS = 1.0
+EXPECTED_SCHEMA_VERSION = "1.0"
 AXES = ("missing", "delay", "drift", "truncate")
 UNGROUNDED = {Outcome.HALLUCINATION, Outcome.OVER_CAUTION}
 
@@ -98,6 +99,7 @@ def make_guarded_baseline():
             telemetry,
             query_time=query_window_end(scenario),
             expected_interval_seconds=EXPECTED_INTERVAL_SECONDS,
+            expected_schema_version=EXPECTED_SCHEMA_VERSION,
         )
         if trust.confidence == "low":
             return AgentVerdict(

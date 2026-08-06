@@ -29,6 +29,7 @@ from langgraph_telemetry_fuzzer.models import AgentVerdict, Telemetry
 
 DEFAULT_MODEL = "claude-opus-5"
 EXPECTED_INTERVAL_SECONDS = 1.0
+EXPECTED_SCHEMA_VERSION = "1.0"
 MAX_TOOL_ROUNDS = 6
 
 # Shared reasoning instructions. Identical across both variants so the only
@@ -140,6 +141,7 @@ def _telemetry_payload(
         telemetry,
         query_time=effective_query_time,
         expected_interval_seconds=EXPECTED_INTERVAL_SECONDS,
+        expected_schema_version=EXPECTED_SCHEMA_VERSION,
     )
     payload["trust_metadata"] = trust.to_dict()
     return payload

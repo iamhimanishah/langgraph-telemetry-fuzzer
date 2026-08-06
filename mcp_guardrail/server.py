@@ -34,6 +34,10 @@ from langgraph_telemetry_fuzzer.scenarios import ALL_SCENARIOS
 # The bundled fixtures are all sampled once per second.
 EXPECTED_INTERVAL_SECONDS = 1.0
 
+# The schema this consumer was built to parse. Configuration, not ground
+# truth -- a real consumer knows what its parsing code targets.
+EXPECTED_SCHEMA_VERSION = "1.0"
+
 _SCENARIOS_BY_ID: dict[str, Scenario] = {s.id: s for s in ALL_SCENARIOS}
 
 
@@ -100,6 +104,7 @@ def query_telemetry(
         corrupted,
         query_time=query_window_end(scenario),
         expected_interval_seconds=EXPECTED_INTERVAL_SECONDS,
+        expected_schema_version=EXPECTED_SCHEMA_VERSION,
     )
     return {
         "scenario_id": scenario.id,

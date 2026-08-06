@@ -7,11 +7,12 @@ the caller's clock. It never sees `CorruptionSpec`, `true_root_cause`, or
 never learns which corruption (if any) its data went through. Peeking at
 the spec would let the guardrail score perfectly and measure nothing.
 
-The three signals are deliberately orthogonal:
+The four signals are deliberately orthogonal:
 
 - `completeness`  catches dropped points  (the `missing` axis)
 - `monotonic`     catches scrambled ordering  (the `delay` axis)
 - `staleness`     catches windows that stop short of the query
+- `schema_match`  catches an unrecognised schema  (the `drift` axis)
 
 `monotonic` is the one that closes the documented blind spot: the reference
 agent counts surviving points but never inspects timestamps, so it scores
@@ -45,6 +46,7 @@ class TrustMetadata:
     monotonic: bool
     staleness_seconds: float
     confidence: str  # "low" | "high"
+    schema_match: bool = True
     reasons: list[str] = field(default_factory=list)
 
     @property
@@ -60,6 +62,7 @@ class TrustMetadata:
             "completeness": round(self.completeness, 4),
             "monotonic": self.monotonic,
             "staleness_seconds": round(self.staleness_seconds, 3),
+            "schema_match": self.schema_match,
             "confidence": self.confidence,
             "reason": self.reason,
         }
@@ -131,6 +134,7 @@ def compute_trust_metadata(
     expected_interval_seconds: float,
     completeness_floor: float = DEFAULT_COMPLETENESS_FLOOR,
     staleness_limit_seconds: float | None = None,
+    expected_schema_version: str | None = None,
 ) -> TrustMetadata:
     """Scores how far the given telemetry can be trusted.
 
@@ -140,6 +144,11 @@ def compute_trust_metadata(
 
     `staleness_limit_seconds` defaults to STALENESS_LIMIT_INTERVALS times the
     expected interval, so the threshold scales with the feed's cadence.
+
+    `expected_schema_version` is the schema the caller was built to read. It
+    is configuration, not ground truth -- a real consumer knows which schema
+    its parsing code targets, independently of what arrives. Leave it None to
+    skip the check.
     """
     if staleness_limit_seconds is None:
         staleness_limit_seconds = STALENESS_LIMIT_INTERVALS * expected_interval_seconds
@@ -152,6 +161,7 @@ def compute_trust_metadata(
             monotonic=True,
             staleness_seconds=float("inf"),
             confidence="low",
+            schema_match=True,
             reasons=["Telemetry contains no timestamped points."],
         )
 
@@ -160,7 +170,18 @@ def compute_trust_metadata(
     newest = max(all_timestamps)
     staleness_seconds = (query_time - newest).total_seconds()
 
+    schema_match = (
+        expected_schema_version is None
+        or telemetry.schema_version == expected_schema_version
+    )
+
     reasons: list[str] = []
+    if not schema_match:
+        reasons.append(
+            f"Telemetry declares schema {telemetry.schema_version!r}, but this "
+            f"consumer reads {expected_schema_version!r}; field meanings cannot "
+            "be assumed to carry over."
+        )
     if completeness < completeness_floor:
         reasons.append(
             f"Only {completeness:.0%} of expected points present "
@@ -188,5 +209,6 @@ def compute_trust_metadata(
         monotonic=monotonic,
         staleness_seconds=staleness_seconds,
         confidence="low" if reasons else "high",
+        schema_match=schema_match,
         reasons=reasons,
     )
