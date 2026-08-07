@@ -14,6 +14,7 @@ from langgraph_telemetry_fuzzer.grader import (
     RootCauseJudge,
     grade,
 )
+from langgraph_telemetry_fuzzer.guardrail import GuardrailGate, window_end
 from langgraph_telemetry_fuzzer.injectors.compose import apply_corruptions
 from langgraph_telemetry_fuzzer.models import (
     AgentVerdict,
@@ -32,6 +33,8 @@ class RunResult(BaseModel):
     spec: CorruptionSpec
     verdict: AgentVerdict
     grade: Grade
+    # True when a guardrail gate abstained before the agent was consulted.
+    guardrail_blocked: bool = False
 
 
 def _dominant_axis_severity(spec: CorruptionSpec) -> tuple[str, str]:
@@ -106,6 +109,10 @@ class Report(BaseModel):
             1 for r in self.results if r.grade.match_method is MatchMethod.ALIAS
         )
 
+    def guardrail_blocked_count(self) -> int:
+        """Runs the guardrail short-circuited before reaching the agent."""
+        return sum(1 for r in self.results if r.guardrail_blocked)
+
     def judge_matched_count(self) -> int:
         """How many correct answers only passed because an LLM judge said so."""
         return sum(
@@ -164,6 +171,7 @@ class Report(BaseModel):
                 "over_caution_rate": self.over_caution_rate(),
                 "alias_matched": self.alias_matched_count(),
                 "judge_matched": self.judge_matched_count(),
+                "guardrail_blocked": self.guardrail_blocked_count(),
                 "outcome_counts": {o.value: self.count(o) for o in Outcome},
             },
             "results": [r.model_dump(mode="json") for r in self.results],
@@ -175,23 +183,46 @@ def run_suite(
     specs: list[CorruptionSpec],
     adapter: LangGraphAdapter,
     judge: RootCauseJudge | None = None,
+    guardrail: GuardrailGate | None = None,
 ) -> Report:
     """Runs every (scenario, spec) pair through `adapter` and grades it.
 
     `judge` is passed through to `grade()` as an opt-in root-cause matching
     fallback; leaving it None keeps the whole run deterministic.
+
+    `guardrail`, when supplied, evaluates the corrupted telemetry before the
+    agent sees it and abstains on the agent's behalf when trust is low. It
+    reads only the telemetry and a clock taken from the scenario's own
+    uncorrupted window -- never the CorruptionSpec or any ground truth.
     """
     results = []
     for scenario in scenarios:
         for spec in specs:
             corrupted = apply_corruptions(scenario.telemetry, spec)
-            verdict = adapter.run(corrupted)
+            blocked = False
+            trust = None
+            if guardrail is not None:
+                clock = window_end(scenario.telemetry)
+                if clock is not None:
+                    trust = guardrail.evaluate(corrupted, clock)
+                    blocked = trust.confidence == "low"
+
+            if blocked and trust is not None:
+                verdict = AgentVerdict(
+                    insufficient_signal=True,
+                    confidence=0.0,
+                    evidence_refs=[trust.reason],
+                )
+            else:
+                verdict = adapter.run(corrupted)
+
             results.append(
                 RunResult(
                     scenario_id=scenario.id,
                     spec=spec,
                     verdict=verdict,
                     grade=grade(scenario, spec, verdict, judge=judge),
+                    guardrail_blocked=blocked,
                 )
             )
     return Report(results=results)

@@ -312,7 +312,38 @@ judge tiers are for — with `--judge`, both grade `CORRECT_ANSWER` tagged
 `MatchMethod.JUDGE`. Enrichment fixed derivability; matching was already
 handled.
 
-### Running it
+### Using it from the CLI
+
+The guardrail is opt-in on `ltf run`. It gates the agent: when the trust
+checks fail it abstains on the agent's behalf, and otherwise hands the
+telemetry through untouched.
+
+```bash
+ltf run --agent your.agent:build_graph --guardrail \
+    --expected-interval 1.0 --expected-schema-version 1.0
+```
+
+| Flag | Meaning |
+|---|---|
+| `--guardrail` | Turn the gate on. Off by default; without it nothing changes. |
+| `--expected-interval` | Seconds between samples in your feed. Drives the completeness and staleness checks. Default `1.0`. |
+| `--expected-schema-version` | The schema your consumer parses. Omit to skip the schema check. |
+
+Both expectations are **configuration you already have**, not ground truth
+— your feed's cadence and the schema your parsing code targets are known
+independently of what any given query returns.
+
+Against the bundled reference agent the flag moves grounding from **32% to
+96%**, and the report says how many runs it gated:
+
+```
+- **Grounding score: 96%**
+- Guardrail gated 66 of 78 run(s) before the agent was consulted.
+```
+
+Use `--fail-on grounding` (the default) to make an ungrounded run fail CI.
+
+### Running the comparison experiment
 
 ```bash
 pip install -e ".[dev,langgraph,llm,mcp]"
