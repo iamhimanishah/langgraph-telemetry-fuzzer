@@ -39,9 +39,9 @@ def test_render_markdown_includes_summary_numbers():
     markdown = render_markdown(report)
 
     assert "Total runs: 2" in markdown
-    assert "Strict pass rate (grounded *and* accurate): 50%" in markdown
-    assert "correct_answer" in markdown
-    assert "hallucination" in markdown
+    assert "Both sound and correct: 50%" in markdown
+    assert "Answered, and was right" in markdown
+    assert "Answered from data that couldn't support it" in markdown
     assert "| delay | severe |" in markdown
 
 
@@ -56,8 +56,8 @@ def test_render_markdown_separates_grounding_from_accuracy():
     markdown = render_markdown(report)
 
     # Both answers were grounded; only one was accurate.
-    assert "**Grounding score: 100%**" in markdown
-    assert "Accuracy rate (of answers committed on sufficient signal): 50%" in markdown
+    assert "**Sound judgement: 100% of runs**" in markdown
+    assert "Named the right cause: 50%" in markdown
 
 
 def test_render_markdown_flags_alias_matched_answers():
@@ -67,7 +67,7 @@ def test_render_markdown_flags_alias_matched_answers():
 
     markdown = render_markdown(report)
 
-    assert "1 correct answer(s) matched via a scenario alias" in markdown
+    assert "1 answer(s) counted as correct via a scenario alias" in markdown
 
 
 def test_render_markdown_omits_alias_note_when_there_are_none():

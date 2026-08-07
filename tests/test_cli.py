@@ -151,5 +151,5 @@ def test_guardrail_run_raises_grounding_on_the_reference_agent(monkeypatch, caps
     main()
 
     out = capsys.readouterr().out
-    assert "Grounding score: 96%" in out
+    assert "Sound judgement: 96% of runs" in out
     assert "Guardrail gated" in out
