@@ -117,6 +117,13 @@ the label. That is the scoring being literal, not the agent being wrong — see
 5. **The real-data evidence is one incident.** It demonstrates the mechanism;
    it is not a benchmark result.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). It covers setup and the common
+extensions — adding a corruption injector, a scenario, or a trust signal —
+plus the five rules that keep the measurements honest, each of which exists
+because breaking it produces numbers that look better and mean less.
+
 ## Who this is for
 
 Worth your time if you run an agent over observability data and would be
@@ -490,7 +497,8 @@ pytest
 7. ~~Guardrail layer: trust signals that close the `delay` blind spot~~
 8. ~~Enrich scenario fixtures so each `true_root_cause` is derivable from its
    own telemetry~~
-9. Docs and contribution guide
+9. ~~Docs and contribution guide~~ — see [CONTRIBUTING.md](CONTRIBUTING.md)
+10. Validate `completeness` against deliberately ragged data (see caveat 1)
 
 ## License
 
