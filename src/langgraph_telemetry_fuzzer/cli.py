@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from langgraph_telemetry_fuzzer.adapter import LangGraphAdapter
+from langgraph_telemetry_fuzzer.guardrail import GuardrailGate
 from langgraph_telemetry_fuzzer.judge import DEFAULT_MODEL as JUDGE_DEFAULT_MODEL
 from langgraph_telemetry_fuzzer.report import render_markdown
 from langgraph_telemetry_fuzzer.runner import run_suite
@@ -54,8 +55,17 @@ def _run(args: argparse.Namespace) -> int:
             print(f"ltf: {exc}", file=sys.stderr)
             return 2
 
+    guardrail = None
+    if args.guardrail:
+        guardrail = GuardrailGate(
+            expected_interval_seconds=args.expected_interval,
+            expected_schema_version=args.expected_schema_version,
+        )
+
     specs = single_axis_matrix(seed=args.seed)
-    report = run_suite(ALL_SCENARIOS, specs, adapter, judge=judge)
+    report = run_suite(
+        ALL_SCENARIOS, specs, adapter, judge=judge, guardrail=guardrail
+    )
 
     print(render_markdown(report))
 
@@ -96,6 +106,25 @@ def build_parser() -> argparse.ArgumentParser:
         default="grounding",
         help="Exit non-zero on any ungrounded run (default), or on any "
         "failure at all including wrong-but-grounded answers ('strict')",
+    )
+    run_parser.add_argument(
+        "--guardrail",
+        action="store_true",
+        help="Gate the agent behind trust signals computed from the telemetry "
+        "alone: abstain on its behalf when the data can't support a conclusion",
+    )
+    run_parser.add_argument(
+        "--expected-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between samples in your feed, used for the completeness "
+        "and staleness checks (default: 1.0)",
+    )
+    run_parser.add_argument(
+        "--expected-schema-version",
+        default=None,
+        help="The telemetry schema your consumer parses. Omit to skip the "
+        "schema check entirely",
     )
     run_parser.add_argument(
         "--judge",

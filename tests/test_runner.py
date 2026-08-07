@@ -7,6 +7,7 @@ from langgraph_telemetry_fuzzer.grader import (
     MatchMethod,
     Outcome,
 )
+from langgraph_telemetry_fuzzer.guardrail import GuardrailGate
 from langgraph_telemetry_fuzzer.runner import Report, RunResult, run_suite
 
 
@@ -228,3 +229,72 @@ def test_to_json_dict_has_summary_and_results():
     assert data["summary"]["total"] == 1
     assert data["summary"]["pass_rate"] == 1.0
     assert len(data["results"]) == 1
+
+
+# -- guardrail gate ----------------------------------------------------------
+
+
+def make_guardrail_scenario(scenario_id: str = "g1") -> Scenario:
+    return Scenario(
+        id=scenario_id,
+        description="guardrail test scenario",
+        telemetry=build_telemetry(),
+        true_root_cause="disk full",
+    )
+
+
+def test_guardrail_short_circuits_the_agent_on_untrustworthy_data():
+    """The gate abstains itself rather than asking the agent -- the adapter
+    must not be consulted at all when trust is low.
+    """
+    scenario = make_guardrail_scenario()
+    adapter = FakeAdapter(AgentVerdict(root_cause="disk full", confidence=0.9))
+    gate = GuardrailGate(expected_interval_seconds=1.0)
+    spec = CorruptionSpec(seed=0, delay=Severity.SEVERE)
+
+    report = run_suite([scenario], [spec], adapter, guardrail=gate)
+
+    assert adapter.calls == 0
+    assert report.results[0].guardrail_blocked is True
+    assert report.results[0].verdict.insufficient_signal is True
+    assert report.guardrail_blocked_count() == 1
+
+
+def test_guardrail_passes_trustworthy_data_straight_through():
+    scenario = make_guardrail_scenario()
+    verdict = AgentVerdict(root_cause="disk full", confidence=0.9)
+    adapter = FakeAdapter(verdict)
+    gate = GuardrailGate(expected_interval_seconds=1.0)
+
+    report = run_suite([scenario], [CorruptionSpec()], adapter, guardrail=gate)
+
+    assert adapter.calls == 1
+    assert report.results[0].guardrail_blocked is False
+    assert report.results[0].verdict.root_cause == "disk full"
+    assert report.guardrail_blocked_count() == 0
+
+
+def test_omitting_the_guardrail_leaves_every_run_untouched():
+    """The gate is strictly opt-in: without it the agent sees everything,
+    exactly as before.
+    """
+    scenario = make_guardrail_scenario()
+    adapter = FakeAdapter(AgentVerdict(root_cause="disk full", confidence=0.9))
+    spec = CorruptionSpec(seed=0, delay=Severity.SEVERE)
+
+    report = run_suite([scenario], [spec], adapter)
+
+    assert adapter.calls == 1
+    assert report.guardrail_blocked_count() == 0
+
+
+def test_gate_reason_is_carried_into_the_verdict_evidence():
+    """A blocked run should say why, not just abstain silently."""
+    scenario = make_guardrail_scenario()
+    adapter = FakeAdapter(AgentVerdict(root_cause="disk full", confidence=0.9))
+    gate = GuardrailGate(expected_interval_seconds=1.0)
+    spec = CorruptionSpec(seed=0, delay=Severity.SEVERE)
+
+    report = run_suite([scenario], [spec], adapter, guardrail=gate)
+
+    assert "out of order" in report.results[0].verdict.evidence_refs[0]

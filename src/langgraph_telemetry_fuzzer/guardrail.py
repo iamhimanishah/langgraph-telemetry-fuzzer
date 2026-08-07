@@ -68,6 +68,18 @@ class TrustMetadata:
         }
 
 
+def window_end(telemetry: Telemetry) -> datetime | None:
+    """The newest timestamp in the bundle, or None if it carries none.
+
+    Callers use this on *uncorrupted* telemetry to stand in for "now" --
+    when the question was asked. That is exogenous information: a real
+    caller knows the clock independently of what the query returns.
+    """
+    stamps = [m.timestamp for m in telemetry.metrics]
+    stamps += [entry.timestamp for entry in telemetry.logs]
+    return max(stamps) if stamps else None
+
+
 def _timestamps_by_series(telemetry: Telemetry) -> dict[str, list[datetime]]:
     """Groups timestamps by their source series, in delivery order.
 
@@ -212,3 +224,31 @@ def compute_trust_metadata(
         schema_match=schema_match,
         reasons=reasons,
     )
+
+
+@dataclass(frozen=True)
+class GuardrailGate:
+    """Bundles the caller-side configuration the trust checks need.
+
+    A gate is the reusable form of the guardrail: construct one with your
+    feed's cadence and schema, then evaluate any telemetry against it. All
+    four fields are configuration a real consumer already has -- none of
+    them says anything about which corruption was applied.
+    """
+
+    expected_interval_seconds: float
+    expected_schema_version: str | None = None
+    completeness_floor: float = DEFAULT_COMPLETENESS_FLOOR
+    staleness_limit_seconds: float | None = None
+
+    def evaluate(
+        self, telemetry: Telemetry, query_time: datetime
+    ) -> TrustMetadata:
+        return compute_trust_metadata(
+            telemetry,
+            query_time=query_time,
+            expected_interval_seconds=self.expected_interval_seconds,
+            completeness_floor=self.completeness_floor,
+            staleness_limit_seconds=self.staleness_limit_seconds,
+            expected_schema_version=self.expected_schema_version,
+        )
