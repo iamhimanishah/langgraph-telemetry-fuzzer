@@ -35,6 +35,7 @@ from langgraph_telemetry_fuzzer import (  # noqa: E402
     grade,
 )
 from langgraph_telemetry_fuzzer.adapter import LangGraphAdapter  # noqa: E402
+from langgraph_telemetry_fuzzer.grader import Outcome  # noqa: E402
 from langgraph_telemetry_fuzzer.guardrail import (  # noqa: E402
     GuardrailGate,
     window_end,
@@ -45,6 +46,15 @@ from langgraph_telemetry_fuzzer.guardrail import (  # noqa: E402
 # time-uniform and keeps every series, so it thins the data without
 # choosing which metrics matter.
 DOWNSAMPLE_SECONDS = 120
+
+# Mirrors report.py: two verdicts, stated in words rather than a tick.
+OUTCOME_MEANING = {
+    Outcome.CORRECT_ANSWER: ("Answered, and was right", "sound"),
+    Outcome.WRONG_ANSWER: ("Answered, but named the wrong cause", "sound"),
+    Outcome.CORRECT_ABSTENTION: ("Refused, data really was unusable", "sound"),
+    Outcome.HALLUCINATION: ("Answered from unusable data", "UNSOUND"),
+    Outcome.OVER_CAUTION: ("Refused, but the data was fine", "UNSOUND"),
+}
 
 FAULT_WORDS = {
     "cpu": "CPU saturation",
@@ -187,12 +197,16 @@ def main() -> int:
         print(f"  confidence             {verdict.confidence}")
 
         print()
-        print(f"STAGE 4  Grade ({label})")
+        print(f"STAGE 4  Scored ({label})")
         result = grade(scenario, spec, verdict)
-        ungrounded = {"hallucination", "over_caution"}
-        print(f"  outcome                {result.outcome.value.upper()}")
-        print(f"  grounded               {result.outcome.value not in ungrounded}")
-        print(f"  reason                 {result.reason[:100]}")
+        what, judgement = OUTCOME_MEANING[result.outcome]
+        print(f"  what it did            {what}")
+        print(f"  judgement              {judgement}  (should it have answered?)")
+        if result.outcome is Outcome.WRONG_ANSWER:
+            print("                         note: scored by exact wording, so a")
+            print("                         correct answer phrased differently")
+            print("                         still lands here")
+        print(f"  detail                 {result.reason[:96]}")
 
     return 0
 

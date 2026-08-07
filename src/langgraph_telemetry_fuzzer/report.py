@@ -1,9 +1,27 @@
-"""Renders a Report as a human-readable markdown summary."""
+"""Renders a Report as a human-readable markdown summary.
+
+The report deliberately keeps two verdicts apart, because collapsing them
+into one pass/fail misleads readers. "Did the agent answer when it should
+have?" is a judgement question; "was the answer right?" is a knowledge
+question. An earlier version printed outcomes with a single tick or cross,
+which rendered a wrong-but-reasonable answer as `WRONG_ANSWER ✅` -- read by
+every first-time reader as "wrong is good". Each outcome now states both
+verdicts in words.
+"""
 
 from __future__ import annotations
 
 from langgraph_telemetry_fuzzer.grader import Outcome
 from langgraph_telemetry_fuzzer.runner import Report
+
+# (what happened, was the decision to answer/refuse sound?)
+_OUTCOME_MEANING: dict[Outcome, tuple[str, str]] = {
+    Outcome.CORRECT_ANSWER: ("Answered, and was right", "sound"),
+    Outcome.WRONG_ANSWER: ("Answered, but named the wrong cause", "sound"),
+    Outcome.CORRECT_ABSTENTION: ("Refused, and the data was indeed unusable", "sound"),
+    Outcome.HALLUCINATION: ("Answered from data that couldn't support it", "UNSOUND"),
+    Outcome.OVER_CAUTION: ("Refused, but the data was fine", "UNSOUND"),
+}
 
 
 def render_markdown(report: Report) -> str:
@@ -14,27 +32,34 @@ def render_markdown(report: Report) -> str:
         "",
         f"- Total runs: {report.total}",
         "",
-        "## Grounding (the headline metric)",
+        "## Judgement — did the agent answer only when it should have?",
         "",
-        "Did the agent commit or abstain in line with what the telemetry",
-        "supported? Independent of whether the named cause was right.",
+        "This is the headline. It asks whether the agent's decision to answer",
+        "or refuse matched what the data could actually support. Naming the",
+        "wrong cause from good data still counts as sound judgement: that is a",
+        "knowledge failure, not a judgement one.",
         "",
-        f"- **Grounding score: {report.grounding_score():.0%}**",
-        f"- Hallucination rate (of insufficient-signal runs): {hallucination_pct:.0%}",
-        f"- Over-caution rate (of sufficient-signal runs): {over_caution_pct:.0%}",
+        f"- **Sound judgement: {report.grounding_score():.0%} of runs**",
+        f"- Answered anyway on unusable data: {hallucination_pct:.0%} "
+        "(of runs where the data was unusable)",
+        f"- Refused perfectly usable data: {over_caution_pct:.0%} "
+        "(of runs where the data was fine)",
         "",
-        "## Accuracy (tracked separately)",
+        "## Accuracy — when it did answer, was the answer right?",
         "",
-        f"- Accuracy rate (of answers committed on sufficient signal): "
-        f"{report.accuracy_rate():.0%}",
-        f"- Strict pass rate (grounded *and* accurate): {report.pass_rate():.0%}",
+        "Tracked separately on purpose. A low score here means the agent needs",
+        "to get smarter; a low score above means it cannot be trusted.",
+        "",
+        f"- Named the right cause: {report.accuracy_rate():.0%} "
+        "(of answers given on usable data)",
+        f"- Both sound and correct: {report.pass_rate():.0%}",
     ]
 
     alias_matched = report.alias_matched_count()
     if alias_matched:
         lines.append(
-            f"- Note: {alias_matched} correct answer(s) matched via a scenario "
-            "alias rather than its canonical phrasing."
+            f"- Note: {alias_matched} answer(s) counted as correct via a "
+            "scenario alias rather than its exact wording."
         )
 
     blocked = report.guardrail_blocked_count()
@@ -47,25 +72,26 @@ def render_markdown(report: Report) -> str:
     judge_matched = report.judge_matched_count()
     if judge_matched:
         lines.append(
-            f"- Note: {judge_matched} correct answer(s) passed only because an "
-            "LLM judge called them equivalent — discount accordingly."
+            f"- Note: {judge_matched} answer(s) counted as correct only because "
+            "an LLM judge called them equivalent — discount accordingly."
         )
 
     lines += [
         "",
-        "## Outcome breakdown",
+        "## What happened, run by run",
         "",
-        "| Outcome | Count |",
-        "| --- | --- |",
+        "| What the agent did | Judgement | Count |",
+        "| --- | --- | --- |",
     ]
     for outcome in Outcome:
-        lines.append(f"| {outcome.value} | {report.count(outcome)} |")
+        what, judgement = _OUTCOME_MEANING[outcome]
+        lines.append(f"| {what} | {judgement} | {report.count(outcome)} |")
 
     lines += [
         "",
-        "## By corruption axis and severity",
+        "## By corruption type and severity",
         "",
-        "| Axis | Severity | Pass rate |",
+        "| Damage applied | Severity | Sound *and* correct |",
         "| --- | --- | --- |",
     ]
     for (axis, severity), (passed, total) in sorted(report.by_axis_severity().items()):

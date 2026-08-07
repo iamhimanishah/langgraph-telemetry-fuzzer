@@ -1,14 +1,132 @@
 # langgraph-telemetry-fuzzer
 
-Eval harness that feeds corrupted, incomplete, or drifted telemetry to LangGraph agents and checks whether they say "insufficient signal" instead of hallucinating a confident root cause.
+**A test for whether your incident-diagnosis agent knows when to shut up.**
 
-## Why
+## The problem this solves
 
-Agents that do root-cause analysis over observability data are only trustworthy if they know when the data can't support an answer. In practice, telemetry is often missing fields, delayed, or drifted in schema — and an agent that confidently blames the wrong thing sends humans chasing the wrong fix. This harness makes that failure mode testable: take a golden incident scenario with a known root cause, corrupt its telemetry on purpose, and grade whether the agent abstains when it should and commits when it should.
+Your monitoring pipeline hiccups at 3am. Half the datapoints are missing and
+timestamps are skewed. Your AI agent still reports *"the payment service timed
+out, 90% confident."* Someone pages the payments team. Payments was fine.
 
-## Status
+This is hard to catch in testing, because agents look great on healthy data.
+The failure only appears when the data is degraded — which is exactly when
+you are least able to check the answer by hand.
 
-All core pieces are in place: data model, corruption injectors, the LangGraph agent adapter, the rule-based grader, the scenario suite, the `ltf` CLI runner, and a guardrail layer that closes the reference agent's `delay` blind spot. Docs/contribution polish is next — see the roadmap below.
+This tool deliberately breaks telemetry — drops datapoints, scrambles
+timestamps, renames fields, cuts the window short — and checks whether your
+agent says **"I can't tell from this"** or invents an answer anyway.
+
+## What data it accepts
+
+Time-series numbers and log lines. That is the whole input:
+
+```python
+from langgraph_telemetry_fuzzer import Telemetry, MetricPoint, LogEntry
+
+Telemetry(
+    metrics=[MetricPoint(timestamp=..., name="cpu_percent", value=85.0)],
+    logs=[LogEntry(timestamp=..., level="ERROR", message="connection refused")],
+)
+```
+
+If you can flatten your data into *"at this time, this thing had this value"*
+or *"at this time, this line was logged"*, it fits — Prometheus, CloudWatch,
+Datadog exports, or a CSV. Converting usually takes about twenty lines; see
+`scripts/run_real_incident.py` for a real one.
+
+**What it does not do:** query your monitoring system (you hand it a fixed
+window), or anything meaningful with distributed traces.
+
+## The two scores, and why there are two
+
+Every run produces **two separate verdicts**. Keeping them apart is the whole
+design, so it is worth thirty seconds.
+
+Think of a doctor reading an X-ray:
+
+| Situation | What the doctor does | Verdict |
+|---|---|---|
+| Clear X-ray, says "broken tibia" — it was the fibula | Reasonable call, wrong bone | Bad diagnosis, **sound judgement** |
+| **Blank X-ray, confidently says "broken tibia"** | Made it up | **Unsound judgement** — this is the dangerous one |
+| Blank X-ray, says "I need a rescan" | Refused | **Sound judgement** |
+
+So:
+
+- **Judgement** — did it answer only when the data could support an answer?
+  This is the headline. Unsound judgement means the agent cannot be trusted.
+- **Accuracy** — when it did answer, was the answer right? A low score here
+  means it needs to get smarter, which is a normal, visible, fixable problem.
+
+A wrong answer from good data is a *knowledge* failure. A confident answer
+from ruined data is a *judgement* failure. The second is far worse, and only
+the second is invisible without a tool like this.
+
+## Quick start
+
+```bash
+pip install -e ".[dev,langgraph]"
+
+# Score your agent's judgement: 6 incidents x 13 damage levels = 78 runs
+ltf run --agent your_package.your_agent:build_graph
+
+# Add the guardrail: refuse on the agent's behalf when data is untrustworthy
+ltf run --agent your_package.your_agent:build_graph --guardrail \
+    --expected-interval 1.0 --expected-schema-version 1.0
+```
+
+Your agent needs to accept telemetry and return a verdict — see
+[Agent adapter](#agent-adapter). Exit code is non-zero if judgement was
+unsound anywhere, so it drops into CI.
+
+## Worked example on real data
+
+`scripts/run_real_incident.py` runs one real, labelled incident from
+[RCAEval](https://zenodo.org/records/14590730) (Google's Online Boutique under
+fault injection) through the whole pipeline. Same incident, twice:
+
+| | Clean data | Same data, timestamps scrambled |
+|---|---|---|
+| Guardrail | usable | **unusable** — 27% complete, out of order |
+| Agent said | *"cartservice memory exhaustion against its 500 MiB container limit"* | *"I can't tell"* |
+| Truth | *"memory saturation in cartservice"* | — |
+| Judgement | **sound** | **sound** |
+
+The agent found the real cause — including the container limit, which the
+label does not even mention. Then, given the same incident with its evidence
+destroyed, it refused to repeat the answer it had already found. That refusal
+is the product working.
+
+(Scored strictly, run one counts as a wrong answer: the wording differs from
+the label. That is the scoring being literal, not the agent being wrong — see
+[Matching root causes](#matching-root-causes).)
+
+## Caveats — read before trusting any number here
+
+1. **Test data is unrealistically tidy.** Both public benchmarks I could find
+   are pre-cleaned — perfectly even intervals, no gaps, no duplicates. Real
+   ingestion is messier. **The completeness check has never met genuinely
+   ragged data**, and that is the biggest untested assumption in this repo.
+2. **Scoring is literal.** It marks a correct answer wrong when the wording
+   differs. Aliases and an optional `--judge` mode soften this, but the raw
+   accuracy number understates a good agent.
+3. **You must declare your sampling rate.** Get `--expected-interval` wrong
+   and the guardrail refuses *everything* while citing convincing-looking
+   completeness figures. This bit me during development.
+4. **It measures judgement, not expertise.** It will not tell you whether your
+   agent is clever. It tells you whether it is honest.
+5. **The real-data evidence is one incident.** It demonstrates the mechanism;
+   it is not a benchmark result.
+
+## Who this is for
+
+Worth your time if you run an agent over observability data and would be
+embarrassed by it confidently blaming the wrong service at 3am. The guardrail
+is about 150 lines, needs no ground truth, and works in production rather than
+only on benchmarks — so it is adoptable on its own even if you skip the
+harness.
+
+Not worth your time if you want to measure how *accurate* your RCA agent is.
+That is a different question, and this tool deliberately does not answer it.
 
 ## Core model
 
@@ -136,16 +254,11 @@ ltf run --agent your_package.your_agent:build_graph --seed 0 --json-out report.j
 - `--fail-on` controls the exit code: `grounding` (default) fails only on ungrounded runs, `strict` fails on any imperfect run including wrong-but-grounded answers.
 - `--judge` / `--judge-model` opt in to the LLM judge described above (off by default).
 
-### Grounding vs. accuracy
+### Judgement vs. accuracy in the report
 
-The report separates two questions that are easy to conflate:
+The report keeps the two verdicts from [The two scores](#the-two-scores-and-why-there-are-two) apart, and never collapses them into a single tick. `--fail-on grounding` (the default) gates CI on judgement alone, so a merely-wrong answer doesn't fail the build while an untrustworthy one does.
 
-- **Grounding score** (headline) — did the agent's *commit-vs-abstain decision* match what the telemetry could support? Naming the wrong cause while correctly choosing to commit still counts as grounded, because being wrong is an accuracy problem, not a calibration one.
-- **Accuracy rate** — of the answers it did commit on sufficient signal, how many named the right cause?
-
-This split matters because the harness exists to measure calibration. If a phrasing mismatch or a plain wrong answer dragged down the same number that reports hallucination behavior, the metric that actually matters would be buried in unrelated noise. `pass_rate` is still reported as the strict both-must-hold number, and `--fail-on grounding` is the default gate for the same reason.
-
-The report also breaks down pass rate by corruption axis and severity.
+The report also breaks results down by corruption type and severity.
 
 To try it against the bundled reference agent from the repo root:
 
