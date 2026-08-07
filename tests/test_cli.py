@@ -100,3 +100,56 @@ def test_main_writes_json_report(monkeypatch, tmp_path):
     assert "summary" in data
     assert "results" in data
     assert data["summary"]["total"] > 0
+
+
+def test_guardrail_flags_default_to_off():
+    parser = build_parser()
+    args = parser.parse_args(["run", "--agent", "a:b"])
+
+    assert args.guardrail is False
+    assert args.expected_interval == 1.0
+    assert args.expected_schema_version is None
+
+
+def test_guardrail_flags_are_accepted():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "run",
+            "--agent",
+            "a:b",
+            "--guardrail",
+            "--expected-interval",
+            "5",
+            "--expected-schema-version",
+            "2.1",
+        ]
+    )
+
+    assert args.guardrail is True
+    assert args.expected_interval == 5.0
+    assert args.expected_schema_version == "2.1"
+
+
+def test_guardrail_run_raises_grounding_on_the_reference_agent(monkeypatch, capsys):
+    """End-to-end through the CLI: the flag has to actually change the
+    reported grounding, not merely parse.
+    """
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "ltf",
+            "run",
+            "--agent",
+            "examples.rca_agent:build_graph",
+            "--guardrail",
+            "--expected-schema-version",
+            "1.0",
+        ],
+    )
+
+    main()
+
+    out = capsys.readouterr().out
+    assert "Grounding score: 96%" in out
+    assert "Guardrail gated" in out

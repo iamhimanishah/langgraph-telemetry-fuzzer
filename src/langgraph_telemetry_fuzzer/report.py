@@ -37,6 +37,13 @@ def render_markdown(report: Report) -> str:
             "alias rather than its canonical phrasing."
         )
 
+    blocked = report.guardrail_blocked_count()
+    if blocked:
+        lines.append(
+            f"- Guardrail gated {blocked} of {report.total} run(s) before the "
+            "agent was consulted."
+        )
+
     judge_matched = report.judge_matched_count()
     if judge_matched:
         lines.append(
