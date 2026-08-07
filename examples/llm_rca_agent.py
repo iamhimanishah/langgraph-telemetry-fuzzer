@@ -123,7 +123,10 @@ class LLMRCAState(TypedDict, total=False):
 
 
 def _telemetry_payload(
-    telemetry: Telemetry, guarded: bool, query_time: datetime | None
+    telemetry: Telemetry,
+    guarded: bool,
+    query_time: datetime | None,
+    expected_interval_seconds: float = EXPECTED_INTERVAL_SECONDS,
 ) -> dict[str, Any]:
     """Serves the tool call from the telemetry already in state.
 
@@ -140,7 +143,7 @@ def _telemetry_payload(
     trust = compute_trust_metadata(
         telemetry,
         query_time=effective_query_time,
-        expected_interval_seconds=EXPECTED_INTERVAL_SECONDS,
+        expected_interval_seconds=expected_interval_seconds,
         expected_schema_version=EXPECTED_SCHEMA_VERSION,
     )
     payload["trust_metadata"] = trust.to_dict()
@@ -163,6 +166,7 @@ def build_graph(
     query_time: datetime | None = None,
     model: str = DEFAULT_MODEL,
     client: Any | None = None,
+    expected_interval_seconds: float = EXPECTED_INTERVAL_SECONDS,
 ):
     """Returns a compiled single-node graph driving a real tool-use loop.
 
@@ -226,7 +230,12 @@ def build_graph(
                         "type": "tool_result",
                         "tool_use_id": block.id,
                         "content": json.dumps(
-                            _telemetry_payload(telemetry, guarded, query_time)
+                            _telemetry_payload(
+                                telemetry,
+                                guarded,
+                                query_time,
+                                expected_interval_seconds,
+                            )
                         ),
                     }
                 )
