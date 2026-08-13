@@ -21,6 +21,9 @@ what it would have cost.
 | [7](0007-keep-the-completeness-floor-at-0.8.md) | Keep the completeness floor at 0.8, despite a better-scoring alternative | Overfitting to fixtures |
 | [8](0008-scenario-causes-must-be-derivable.md) | Scenario causes must be derivable from their own telemetry | Fixture honesty |
 
+For the machinery rather than the reasoning — module map, run pipeline,
+trust boundary — see [ARCHITECTURE.md](../ARCHITECTURE.md).
+
 ## Reading order
 
 For the core argument, read **5 → 7 → 3**. Those three explain why the

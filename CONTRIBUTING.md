@@ -116,6 +116,9 @@ parsed as "wrong is good". State both verdicts in words.
 
 ## Common contributions
 
+New to the codebase? [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) shows how a
+run flows end to end and where the extension points are.
+
 ### Add a corruption injector
 
 Injectors live in `src/langgraph_telemetry_fuzzer/injectors/`. Each is a

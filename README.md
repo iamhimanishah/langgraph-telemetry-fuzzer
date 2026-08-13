@@ -131,6 +131,10 @@ because breaking it produces numbers that look better and mean less.
 
 ## Why it's built this way
 
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the map — the run pipeline,
+the trust boundary, the five outcomes, and what is deliberately absent, with
+diagrams.
+
 [docs/adr/](docs/adr/) records the eight decisions that shape the harness,
 including the ones where the higher-scoring option was declined. If you only
 read three: [the guardrail never sees ground
