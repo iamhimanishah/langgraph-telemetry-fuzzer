@@ -13,7 +13,7 @@ cd langgraph-telemetry-fuzzer
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,langgraph]"
 
-pytest                                      # 137 tests, ~0.3s
+pytest                                      # 152 tests, ~0.3s
 ruff check src tests examples scripts mcp_guardrail
 ```
 
@@ -183,6 +183,13 @@ See `examples/rca_agent.py` (rule-based, offline) and
   on why sorting first would detect nothing).
 - Tests read as claims: `test_monotonic_fires_on_delay_at_every_severity`,
   not `test_monotonic_2`.
+
+## Conduct and security
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). To
+report a vulnerability, see [SECURITY.md](SECURITY.md) — note that `--agent`
+imports and calls whatever module you name, so it is equivalent to `python -c`
+and should never take untrusted input.
 
 ## Pull requests
 

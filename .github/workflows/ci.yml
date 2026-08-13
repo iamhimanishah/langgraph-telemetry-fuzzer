@@ -19,6 +19,6 @@ jobs:
       - name: Install package
         run: pip install -e ".[dev,langgraph]"
       - name: Lint
-        run: ruff check src tests examples
+        run: ruff check src tests examples scripts mcp_guardrail
       - name: Test
         run: pytest

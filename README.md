@@ -102,10 +102,15 @@ the label. That is the scoring being literal, not the agent being wrong — see
 
 ## Caveats — read before trusting any number here
 
-1. **Test data is unrealistically tidy.** Both public benchmarks I could find
-   are pre-cleaned — perfectly even intervals, no gaps, no duplicates. Real
-   ingestion is messier. **The completeness check has never met genuinely
-   ragged data**, and that is the biggest untested assumption in this repo.
+1. **Ragged data: mostly fine, two known false positives.** Both public
+   benchmarks are pre-cleaned, so this was untested until synthetic ragged
+   telemetry was built for it (`tests/test_ragged_data.py`). Results:
+   scrape jitter, up to 30% failed scrapes, and duplicate timestamps are all
+   **tolerated**. Two cases are **not**: out-of-order delivery beyond about a
+   sample interval (async ingestion — raise `--disorder-tolerance`), and
+   mixed-cadence feeds where one `--expected-interval` cannot describe the
+   whole window. A long collector outage is flagged, which is correct rather
+   than a false positive.
 2. **Scoring is literal.** It marks a correct answer wrong when the wording
    differs. Aliases and an optional `--judge` mode soften this, but the raw
    accuracy number understates a good agent.
@@ -498,7 +503,9 @@ pytest
 8. ~~Enrich scenario fixtures so each `true_root_cause` is derivable from its
    own telemetry~~
 9. ~~Docs and contribution guide~~ — see [CONTRIBUTING.md](CONTRIBUTING.md)
-10. Validate `completeness` against deliberately ragged data (see caveat 1)
+10. ~~Validate `completeness` against deliberately ragged data~~ — done;
+    two false positives found and documented (see caveat 1)
+11. Per-series interval inference, to remove the mixed-cadence false positive
 
 ## License
 

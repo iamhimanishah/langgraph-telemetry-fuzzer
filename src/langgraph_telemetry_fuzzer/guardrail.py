@@ -96,17 +96,29 @@ def _timestamps_by_series(telemetry: Telemetry) -> dict[str, list[datetime]]:
     return dict(series)
 
 
-def _is_monotonic(series: dict[str, list[datetime]]) -> bool:
+def _is_monotonic(
+    series: dict[str, list[datetime]], tolerance_seconds: float = 0.0
+) -> bool:
     """True if every series' timestamps are non-decreasing as delivered.
 
     Deliberately checks delivery order rather than sorted order -- sorting
     first would make this trivially true and detect nothing. The `delay`
     injector skews timestamps while leaving list position untouched, so the
     disagreement between the two orderings is precisely the signal.
+
+    `tolerance_seconds` forgives small backward steps. Asynchronous
+    pipelines -- multiple collectors, partitioned queues -- deliver points
+    slightly out of order for entirely benign reasons, and measurement puts
+    that reordering at roughly a sample interval or two. Real clock skew is
+    orders of magnitude larger (the mildest `delay` severity is +/-120s on
+    a 1Hz feed), so a tolerance of a few intervals separates the two
+    cleanly. It defaults to 0 -- strict -- because raising it is a claim
+    about your pipeline that only you can make.
     """
     for timestamps in series.values():
-        if any(a > b for a, b in zip(timestamps, timestamps[1:])):
-            return False
+        for earlier, later in zip(timestamps, timestamps[1:]):
+            if (earlier - later).total_seconds() > tolerance_seconds:
+                return False
     return True
 
 
@@ -147,6 +159,7 @@ def compute_trust_metadata(
     completeness_floor: float = DEFAULT_COMPLETENESS_FLOOR,
     staleness_limit_seconds: float | None = None,
     expected_schema_version: str | None = None,
+    disorder_tolerance_seconds: float = 0.0,
 ) -> TrustMetadata:
     """Scores how far the given telemetry can be trusted.
 
@@ -156,6 +169,10 @@ def compute_trust_metadata(
 
     `staleness_limit_seconds` defaults to STALENESS_LIMIT_INTERVALS times the
     expected interval, so the threshold scales with the feed's cadence.
+
+    `disorder_tolerance_seconds` forgives out-of-order delivery up to that
+    size; see `_is_monotonic`. Leave at 0 unless your ingestion is
+    asynchronous.
 
     `expected_schema_version` is the schema the caller was built to read. It
     is configuration, not ground truth -- a real consumer knows which schema
@@ -178,7 +195,7 @@ def compute_trust_metadata(
         )
 
     completeness = _completeness(series, expected_interval_seconds)
-    monotonic = _is_monotonic(series)
+    monotonic = _is_monotonic(series, disorder_tolerance_seconds)
     newest = max(all_timestamps)
     staleness_seconds = (query_time - newest).total_seconds()
 
@@ -240,6 +257,7 @@ class GuardrailGate:
     expected_schema_version: str | None = None
     completeness_floor: float = DEFAULT_COMPLETENESS_FLOOR
     staleness_limit_seconds: float | None = None
+    disorder_tolerance_seconds: float = 0.0
 
     def evaluate(
         self, telemetry: Telemetry, query_time: datetime
@@ -251,4 +269,5 @@ class GuardrailGate:
             completeness_floor=self.completeness_floor,
             staleness_limit_seconds=self.staleness_limit_seconds,
             expected_schema_version=self.expected_schema_version,
+            disorder_tolerance_seconds=self.disorder_tolerance_seconds,
         )
