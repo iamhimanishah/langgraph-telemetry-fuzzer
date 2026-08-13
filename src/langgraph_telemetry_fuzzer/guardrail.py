@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from langgraph_telemetry_fuzzer.models import Telemetry
 
@@ -56,7 +57,7 @@ class TrustMetadata:
             return "All trust checks passed."
         return " ".join(self.reasons)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Plain dict for handing across a tool boundary (e.g. MCP)."""
         return {
             "completeness": round(self.completeness, 4),

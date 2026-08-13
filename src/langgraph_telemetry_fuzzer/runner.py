@@ -4,6 +4,8 @@ specs, and aggregates the resulting grades into a Report.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from langgraph_telemetry_fuzzer.adapter import LangGraphAdapter
@@ -156,7 +158,7 @@ class Report(BaseModel):
                 bucket[0] += 1
         return {key: (passed, total) for key, (passed, total) in buckets.items()}
 
-    def to_json_dict(self) -> dict:
+    def to_json_dict(self) -> dict[str, Any]:
         """A plain-dict form (summary + raw results) suitable for
         `json.dumps` -- computed metrics are included so a saved report
         doesn't need to be re-parsed through this class to read them.

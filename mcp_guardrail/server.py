@@ -137,7 +137,7 @@ def query_telemetry_raw(
     }
 
 
-def build_server():
+def build_server() -> Any:
     """Registers both tools on an MCPServer and returns it."""
     from mcp.server import MCPServer
 

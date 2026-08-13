@@ -15,6 +15,7 @@ pip install -e ".[dev,langgraph]"
 
 pytest                                      # 152 tests, ~0.3s
 ruff check src tests examples scripts mcp_guardrail
+mypy                                        # strict, src + mcp_guardrail
 ```
 
 Python 3.10+. Optional extras: `[llm]` and `[judge]` need an
@@ -177,6 +178,11 @@ See `examples/rca_agent.py` (rule-based, offline) and
   imports.
 - Type hints on public functions. Modern syntax (`X | None`, `list[str]`) —
   the project targets 3.10+.
+- `mypy --strict` must pass on `src` and `mcp_guardrail`; it runs in CI as a
+  bare `mypy` (paths come from `pyproject.toml`). Tests, examples, and
+  scripts are deliberately out of scope — strict mode wants an annotation on
+  every test function, which is a lot of ceremony on code whose contract is
+  the assertion it makes.
 - Comments explain *why*, not *what*. The codebase leans on module
   docstrings to record reasoning that would otherwise be lost — especially
   where a naive implementation looks correct but isn't (see `_is_monotonic`

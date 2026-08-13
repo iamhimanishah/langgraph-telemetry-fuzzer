@@ -20,5 +20,7 @@ jobs:
         run: pip install -e ".[dev,langgraph]"
       - name: Lint
         run: ruff check src tests examples scripts mcp_guardrail
+      - name: Type-check
+        run: mypy
       - name: Test
         run: pytest
