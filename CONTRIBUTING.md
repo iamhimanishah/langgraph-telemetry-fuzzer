@@ -25,7 +25,13 @@ default test suite runs offline, and CI covers 3.10 and 3.12.
 
 ## The five rules
 
+Each rule has an ADR behind it in [docs/adr/](docs/adr/) with the
+measurements and the alternatives that were rejected. The rules are the
+short form; the ADRs are the argument.
+
 ### 1. The guardrail never sees ground truth
+
+> [ADR-0005](docs/adr/0005-the-guardrail-never-sees-ground-truth.md)
 
 `compute_trust_metadata()` may read the `Telemetry` and a clock. It may
 **not** read `CorruptionSpec`, `true_root_cause`, or `tolerant_up_to`.
@@ -40,6 +46,8 @@ independently of the query?* `expected_interval_seconds` and
 schema your parser targets. "Which corruption was applied" does not.
 
 ### 2. Scenarios must be derivable
+
+> [ADR-0008](docs/adr/0008-scenario-causes-must-be-derivable.md)
 
 A scenario's `true_root_cause` has to be reachable **from its own
 telemetry**, by someone who has not seen the label.
@@ -57,6 +65,8 @@ or log line that makes it recoverable.
 
 ### 3. Every series stays dense
 
+> [ADR-0008](docs/adr/0008-scenario-causes-must-be-derivable.md)
+
 The completeness check compares observed points against what each series'
 own time span implies. A sparse event stream — two entries across a
 20-second window — reads as **55% complete** and flags clean telemetry as
@@ -71,6 +81,8 @@ change one, check the other — `test_every_bundled_scenario_is_trusted_when_cle
 is the guard.
 
 ### 4. Don't tune thresholds after seeing the score
+
+> [ADR-0007](docs/adr/0007-keep-the-completeness-floor-at-0.8.md)
 
 Picking `completeness_floor` because 0.9 scored better than 0.8 on *this*
 suite is fitting to the fixtures, not to the problem. The default stays at
@@ -89,6 +101,8 @@ restatements of the same cause — accepting "database is slow" for
 "connection pool exhaustion" quietly inflates every score that follows.
 
 ### 5. Report judgement and accuracy separately
+
+> [ADR-0003](docs/adr/0003-score-judgement-and-accuracy-separately.md)
 
 Never collapse them into one pass/fail. A wrong answer from good data is a
 knowledge failure; a confident answer from ruined data is a judgement

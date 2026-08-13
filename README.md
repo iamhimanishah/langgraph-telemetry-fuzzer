@@ -129,6 +129,18 @@ extensions — adding a corruption injector, a scenario, or a trust signal —
 plus the five rules that keep the measurements honest, each of which exists
 because breaking it produces numbers that look better and mean less.
 
+## Why it's built this way
+
+[docs/adr/](docs/adr/) records the eight decisions that shape the harness,
+including the ones where the higher-scoring option was declined. If you only
+read three: [the guardrail never sees ground
+truth](docs/adr/0005-the-guardrail-never-sees-ground-truth.md), [why the
+completeness floor stays at
+0.8](docs/adr/0007-keep-the-completeness-floor-at-0.8.md), and [why there are
+two scores](docs/adr/0003-score-judgement-and-accuracy-separately.md) —
+together they explain why the headline number is 96% rather than 100%, and
+why 100% would be worse.
+
 ## Who this is for
 
 Worth your time if you run an agent over observability data and would be
@@ -503,6 +515,7 @@ pytest
 8. ~~Enrich scenario fixtures so each `true_root_cause` is derivable from its
    own telemetry~~
 9. ~~Docs and contribution guide~~ — see [CONTRIBUTING.md](CONTRIBUTING.md)
+   and [docs/adr/](docs/adr/) for the decision records
 10. ~~Validate `completeness` against deliberately ragged data~~ — done;
     two false positives found and documented (see caveat 1)
 11. Per-series interval inference, to remove the mixed-cadence false positive
