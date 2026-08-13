@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+title: langgraph-telemetry-fuzzer
+message: >-
+  If you use this software or its findings in your research, please cite it
+  using these metadata.
+type: software
+authors:
+  - family-names: Shah
+    given-names: Himani
+repository-code: >-
+  https://github.com/iamhimanishah/langgraph-telemetry-fuzzer
+abstract: >-
+  An evaluation harness that measures whether an incident-diagnosis agent
+  abstains when its telemetry cannot support a conclusion. It injects
+  reproducible corruption into observability data along four axes -- dropped
+  datapoints, skewed timestamps, schema drift, and truncated windows -- and
+  scores judgement (did the agent answer only when it should have?)
+  separately from accuracy (was the answer right?). It also ships a guardrail
+  layer that computes trust signals from telemetry alone, without access to
+  ground truth, and so is deployable in production rather than only against
+  a benchmark.
+keywords:
+  - large language models
+  - agent evaluation
+  - hallucination
+  - calibration
+  - abstention
+  - observability
+  - root cause analysis
+  - AIOps
+license: MIT
+references:
+  - type: dataset
+    title: >-
+      RCAEval: A Benchmark for Root Cause Analysis of Microservice Systems
+    doi: 10.5281/zenodo.14590730
+    notes: >-
+      Used for the real-data worked example in scripts/run_real_incident.py.

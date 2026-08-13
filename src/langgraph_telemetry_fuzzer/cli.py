@@ -60,6 +60,7 @@ def _run(args: argparse.Namespace) -> int:
         guardrail = GuardrailGate(
             expected_interval_seconds=args.expected_interval,
             expected_schema_version=args.expected_schema_version,
+            disorder_tolerance_seconds=args.disorder_tolerance,
         )
 
     specs = single_axis_matrix(seed=args.seed)
@@ -125,6 +126,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="The telemetry schema your consumer parses. Omit to skip the "
         "schema check entirely",
+    )
+    run_parser.add_argument(
+        "--disorder-tolerance",
+        type=float,
+        default=0.0,
+        help="Forgive out-of-order delivery up to this many seconds. Raise it "
+        "if ingestion is asynchronous (several collectors, partitioned "
+        "queues); leave at 0 for a single ordered source",
     )
     run_parser.add_argument(
         "--judge",
