@@ -17,7 +17,7 @@ Requires the optional extra: pip install -e ".[judge]"
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
@@ -65,12 +65,12 @@ class LLMJudge:
     attempted, so the harness still imports cleanly without the extra.
     """
 
-    def __init__(self, model: str = DEFAULT_MODEL, client: object | None = None):
+    def __init__(self, model: str = DEFAULT_MODEL, client: Any = None):
         self.model = model
         self._client = client
         self.calls = 0
 
-    def _ensure_client(self) -> object:
+    def _ensure_client(self) -> Any:
         if self._client is None:
             try:
                 import anthropic
@@ -107,7 +107,7 @@ class LLMJudge:
         # a pass -- fail closed, consistent with the rest of the harness.
         if getattr(response, "stop_reason", None) == "refusal":
             return False
-        decision = response.parsed_output
+        decision: JudgeDecision | None = response.parsed_output
         if decision is None:
             return False
         return decision.same_root_cause
